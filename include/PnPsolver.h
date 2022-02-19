@@ -93,22 +93,22 @@ class PnPsolver {
 
   void choose_control_points(void);
   void compute_barycentric_coordinates(void);
-  void fill_M(CvMat * M, const int row, const double * alphas, const double u, const double v);
+  void fill_M(CvMat * M, const int row, const double * alphas, const double u, const double v) const;
   void compute_ccs(const double * betas, const double * ut);
   void compute_pcs(void);
 
   void solve_for_sign(void);
 
-  void find_betas_approx_1(const CvMat * L_6x10, const CvMat * Rho, double * betas);
-  void find_betas_approx_2(const CvMat * L_6x10, const CvMat * Rho, double * betas);
-  void find_betas_approx_3(const CvMat * L_6x10, const CvMat * Rho, double * betas);
+  static void find_betas_approx_1(const CvMat * L_6x10, const CvMat * Rho, double * betas);
+  static void find_betas_approx_2(const CvMat * L_6x10, const CvMat * Rho, double * betas);
+  static void find_betas_approx_3(const CvMat * L_6x10, const CvMat * Rho, double * betas);
   void qr_solve(CvMat * A, CvMat * b, CvMat * X);
 
-  double dot(const double * v1, const double * v2);
-  double dist2(const double * p1, const double * p2);
+  static double dot(const double * v1, const double * v2);
+  static double dist2(const double * p1, const double * p2);
 
   void compute_rho(double * rho);
-  void compute_L_6x10(const double * ut, double * l_6x10);
+  static void compute_L_6x10(const double * ut, double * l_6x10);
 
   void gauss_newton(const CvMat * L_6x10, const CvMat * Rho, double current_betas[4]);
   void compute_A_and_b_gauss_newton(const double * l_6x10, const double * rho,
@@ -119,19 +119,23 @@ class PnPsolver {
 
   void estimate_R_and_t(double R[3][3], double t[3]);
 
-  void copy_R_and_t(const double R_dst[3][3], const double t_dst[3],
+  static void copy_R_and_t(const double R_dst[3][3], const double t_dst[3],
 		    double R_src[3][3], double t_src[3]);
 
-  void mat_to_quat(const double R[3][3], double q[4]);
+  static void mat_to_quat(const double R[3][3], double q[4]);
 
+  double uc, vc;//相机内参，cx,fy
+  double fu, fv;//相机内参，fx,fy
 
-  double uc, vc, fu, fv;
+  double * pws;//存放RANSAC每次选中的用于计算PnP的3D点
+  double * us;//存放RANSAC每次选中的用于计算PnP的2D点
+  double * alphas;//存放所有点对 对应的barycentric坐标
+  double * pcs;
+  int max_num_of_corr;
+  int num_of_corr;
 
-  double * pws, * us, * alphas, * pcs;
-  int maximum_number_of_correspondences;
-  int number_of_correspondences;
-
-  double cws[4][3], ccs[4][3];
+  double cws[4][3];//控制点，在世界坐标系
+  double ccs[4][3];//控制点，在相机坐标系
   double cws_determinant;
 
   vector<MapPoint*> mvpMapPointMatches;
@@ -153,8 +157,7 @@ class PnPsolver {
   vector<bool> mvbInliersi;
   int mnInliersi;
 
-  // Current Ransac State
-  int mnIterations;
+  int mnIterations;//Current Ransac State，当前迭代的总次数
   vector<bool> mvbBestInliers;
   int mnBestInliers;
   cv::Mat mBestTcw;
@@ -170,22 +173,22 @@ class PnPsolver {
   // Indices for random selection [0 .. N-1]
   vector<size_t> mvAllIndices;
 
-  // RANSAC probability
+  // RANSAC probability,迭代过程中随机选取的点均为局内点的概率，因此也表示了算法结果的准确性。默认p=0.99
   double mRansacProb;
 
-  // RANSAC min inliers
+  // RANSAC min inliers,每次迭代所需的最小内点数，最小为4
   int mRansacMinInliers;
 
-  // RANSAC max iterations
+  // RANSAC max iterations,最大迭代次数
   int mRansacMaxIts;
 
-  // RANSAC expected inliers/total ratio
+  // RANSAC expected inliers/total ratio，局内点所占整个数据集的比例。默认为0.4
   float mRansacEpsilon;
 
   // RANSAC Threshold inlier/outlier. Max error e = dist(P1,T_12*P2)^2
   float mRansacTh;
 
-  // RANSAC Minimun Set used at each iteration
+  // RANSAC Minimun Set used at each iteration，每次随即选取的特征点数，默认为4组
   int mRansacMinSet;
 
   // Max square error associated with scale level. Max error = th*th*sigma(level)*sigma(level)

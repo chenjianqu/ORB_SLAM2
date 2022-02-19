@@ -35,13 +35,21 @@ namespace ORB_SLAM2
 {
 
 const int ORBmatcher::TH_HIGH = 100;
-const int ORBmatcher::TH_LOW = 50;
-const int ORBmatcher::HISTO_LENGTH = 30;
+const int ORBmatcher::TH_LOW = 50; //匹配的描述子的距离
+const int ORBmatcher::HISTO_LENGTH = 30;//旋转直方图的长度
 
 ORBmatcher::ORBmatcher(float nnratio, bool checkOri): mfNNratio(nnratio), mbCheckOrientation(checkOri)
 {
 }
 
+/**
+ * 用于局部地图跟踪
+ * 从vpMapPoints中找到与普通帧F的特征点匹配的MapPoints，以增补F的MapPoints
+ * @param F
+ * @param vpMapPoints
+ * @param th
+ * @return
+ */
 int ORBmatcher::SearchByProjection(Frame &F, const vector<MapPoint*> &vpMapPoints, const float th)
 {
     int nmatches=0;
@@ -80,10 +88,8 @@ int ORBmatcher::SearchByProjection(Frame &F, const vector<MapPoint*> &vpMapPoint
         int bestIdx =-1 ;
 
         // Get best and second matches with near keypoints
-        for(vector<size_t>::const_iterator vit=vIndices.begin(), vend=vIndices.end(); vit!=vend; vit++)
+        for(unsigned long idx : vIndices)
         {
-            const size_t idx = *vit;
-
             if(F.mvpMapPoints[idx])
                 if(F.mvpMapPoints[idx]->Observations()>0)
                     continue;
@@ -156,6 +162,14 @@ bool ORBmatcher::CheckDistEpipolarLine(const cv::KeyPoint &kp1,const cv::KeyPoin
     return dsqr<3.84*pKF2->mvLevelSigma2[kp2.octave];
 }
 
+/**
+ * 用于重定位
+ * 使用Dbow对关键帧pKF和普通帧F的特征点进行匹配，最佳匹配：F的索引和pKF的MapPoint存入vpMapPointMatches
+ * @param pKF
+ * @param F
+ * @param vpMapPointMatches
+ * @return
+ */
 int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPointMatches)
 {
     const vector<MapPoint*> vpMapPointsKF = pKF->GetMapPointMatches();
@@ -167,8 +181,8 @@ int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPoin
     int nmatches=0;
 
     vector<int> rotHist[HISTO_LENGTH];
-    for(int i=0;i<HISTO_LENGTH;i++)
-        rotHist[i].reserve(500);
+    for(auto & i : rotHist)
+        i.reserve(500);
     const float factor = 1.0f/HISTO_LENGTH;
 
     // We perform the matching over ORB that belong to the same vocabulary node (at a certain level)
@@ -287,6 +301,16 @@ int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPoin
     return nmatches;
 }
 
+/**
+ * 用于回环检测
+ * 使用Sim3变换，将vpPoints和pKF进行匹配，最匹配的MapPoints存入vpMatched中
+ * @param pKF
+ * @param Scw
+ * @param vpPoints
+ * @param vpMatched
+ * @param th
+ * @return
+ */
 int ORBmatcher::SearchByProjection(KeyFrame* pKF, cv::Mat Scw, const vector<MapPoint*> &vpPoints, vector<MapPoint*> &vpMatched, int th)
 {
     // Get Calibration Parameters for later projection
@@ -402,123 +426,123 @@ int ORBmatcher::SearchByProjection(KeyFrame* pKF, cv::Mat Scw, const vector<MapP
     return nmatches;
 }
 
-int ORBmatcher::SearchForInitialization(Frame &F1, Frame &F2, vector<cv::Point2f> &vbPrevMatched, vector<int> &vnMatches12, int windowSize)
+
+/**
+ * 用于单目初始化.
+ * 匹配F1和F2的特征点，匹配的特征点索引存入vnMatches12
+ * @param F1
+ * @param F2
+ * @param vbPrevMatched
+ * @param vnMatches12
+ * @param windowSize
+ * @return
+ */
+int ORBmatcher::SearchForInitialization(Frame &F1, Frame &F2, vector<cv::Point2f> &vbPrevMatched, vector<int> &vnMatches12, int windowSize) const
 {
-    int nmatches=0;
-    vnMatches12 = vector<int>(F1.mvKeysUn.size(),-1);
-
+    //旋转的直方图,表示0-360度的角度,每个bin记录一个角度范围的特征点
     vector<int> rotHist[HISTO_LENGTH];
-    for(int i=0;i<HISTO_LENGTH;i++)
-        rotHist[i].reserve(500);
+    for(auto & rh : rotHist)
+        rh.reserve(500);
     const float factor = 1.0f/HISTO_LENGTH;
-
+    int nmatches=0;
+    //-1表示这里面含没有存储匹配点，存储的是F1到F2特征点的索引
+    vnMatches12 = vector<int>(F1.mvKeysUn.size(),-1);
+    //两个keypoints的匹配距离，是按照F2中的keypoints的数量大小来进行分配的
     vector<int> vMatchedDistance(F2.mvKeysUn.size(),INT_MAX);
+    //F2特征到F1特征的匹配,用来标志F2中的某个特征是否已经被匹配过了
     vector<int> vnMatches21(F2.mvKeysUn.size(),-1);
 
-    for(size_t i1=0, iend1=F1.mvKeysUn.size(); i1<iend1; i1++)
-    {
+    ///遍历Frame1中所有的特征点
+    for(size_t i1=0, iend1=F1.mvKeysUn.size(); i1<iend1; i1++) {
         cv::KeyPoint kp1 = F1.mvKeysUn[i1];
         int level1 = kp1.octave;
-        if(level1>0)
+        if(level1>0) //只提取第0层图像中的特征点
             continue;
-
-        vector<size_t> vIndices2 = F2.GetFeaturesInArea(vbPrevMatched[i1].x,vbPrevMatched[i1].y, windowSize,level1,level1);
-
+        ///获取以vbPrevMatched[i1]为中心,距离在windowSize内的所有特征点,作为候选的匹配特征点
+        vector<size_t> vIndices2 = F2.GetFeaturesInArea(vbPrevMatched[i1].x,vbPrevMatched[i1].y, (float)windowSize,level1,level1);
         if(vIndices2.empty())
             continue;
-
-        cv::Mat d1 = F1.mDescriptors.row(i1);
-
-        int bestDist = INT_MAX;
-        int bestDist2 = INT_MAX;
+        cv::Mat d1 = F1.mDescriptors.row((int)i1);//il的描述子
+        int bestDist = INT_MAX;//最佳距离
+        int bestDist2 = INT_MAX;//次佳距离
         int bestIdx2 = -1;
-
-        for(vector<size_t>::iterator vit=vIndices2.begin(); vit!=vIndices2.end(); vit++)
+        ///遍历所有的候选特征点
+        for(unsigned long i2 : vIndices2)
         {
-            size_t i2 = *vit;
-
-            cv::Mat d2 = F2.mDescriptors.row(i2);
-
+            cv::Mat d2 = F2.mDescriptors.row(i2);//i2的描述子
+            ///计算两个描述子之间的距离
             int dist = DescriptorDistance(d1,d2);
-
-            if(vMatchedDistance[i2]<=dist)
+            if(vMatchedDistance[i2] <= dist)
                 continue;
-
-            if(dist<bestDist)
-            {
+            ///记录最佳的匹配特征
+            if(dist<bestDist){
                 bestDist2=bestDist;
                 bestDist=dist;
                 bestIdx2=i2;
             }
-            else if(dist<bestDist2)
-            {
+            else if(dist<bestDist2){
                 bestDist2=dist;
             }
         }
-
-        if(bestDist<=TH_LOW)
-        {
-            if(bestDist<(float)bestDist2*mfNNratio)
-            {
-                if(vnMatches21[bestIdx2]>=0)
-                {
+        ///满足距离阈值
+        if(bestDist<=TH_LOW){
+            if((float)bestDist<(float)bestDist2*mfNNratio){//最小距离和次小距离的比值 满足 阈值
+                if(vnMatches21[bestIdx2]>=0){ //如果最佳匹配点的ID在vnMatches21中>0到说明，他已经被匹配过了
                     vnMatches12[vnMatches21[bestIdx2]]=-1;
                     nmatches--;
                 }
+                ///设置匹配索引 距离
                 vnMatches12[i1]=bestIdx2;
                 vnMatches21[bestIdx2]=i1;
                 vMatchedDistance[bestIdx2]=bestDist;
                 nmatches++;
-
-                if(mbCheckOrientation)
-                {
-                    float rot = F1.mvKeysUn[i1].angle-F2.mvKeysUn[bestIdx2].angle;
+                ///将特征点放入直方图中,用来检查方向是否匹配
+                if(mbCheckOrientation){
+                    float rot = F1.mvKeysUn[i1].angle-F2.mvKeysUn[bestIdx2].angle;//角度差
                     if(rot<0.0)
                         rot+=360.0f;
-                    int bin = round(rot*factor);
-                    if(bin==HISTO_LENGTH)
-                        bin=0;
+                    int bin = (int)std::round(rot*factor);
+                    if(bin==HISTO_LENGTH) bin=0;
                     assert(bin>=0 && bin<HISTO_LENGTH);
-                    rotHist[bin].push_back(i1);
+                    rotHist[bin].push_back(i1);//将特征点放入直方图中
                 }
             }
         }
-
     }
-
-    if(mbCheckOrientation)
-    {
+    ///删除旋转直方图中的 非主流部分
+    if(mbCheckOrientation){
         int ind1=-1;
         int ind2=-1;
         int ind3=-1;
-
+        //算出旋转角度差落在bin中最多的前三位的索引
         ComputeThreeMaxima(rotHist,HISTO_LENGTH,ind1,ind2,ind3);
-
-        for(int i=0; i<HISTO_LENGTH; i++)
-        {
+        for(int i=0; i<HISTO_LENGTH; i++){ //删除其它bin的特征匹配
             if(i==ind1 || i==ind2 || i==ind3)
                 continue;
-            for(size_t j=0, jend=rotHist[i].size(); j<jend; j++)
-            {
-                int idx1 = rotHist[i][j];
-                if(vnMatches12[idx1]>=0)
-                {
+            for(int idx1 : rotHist[i]){
+                if(vnMatches12[idx1]>=0){
                     vnMatches12[idx1]=-1;
                     nmatches--;
                 }
             }
         }
-
     }
 
-    //Update prev matched
+    ///更新匹配
     for(size_t i1=0, iend1=vnMatches12.size(); i1<iend1; i1++)
         if(vnMatches12[i1]>=0)
             vbPrevMatched[i1]=F2.mvKeysUn[vnMatches12[i1]].pt;
-
     return nmatches;
 }
 
+/**
+ * 用于回环检测
+ * 根据Dbow,筛选pKF1和pKF2匹配的MapPoints，并将pKF1的索引和pKF2的索引存入vpMatch12中
+ * @param pKF1
+ * @param pKF2
+ * @param vpMatches12
+ * @return
+ */
 int ORBmatcher::SearchByBoW(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint *> &vpMatches12)
 {
     const vector<cv::KeyPoint> &vKeysUn1 = pKF1->mvKeysUn;
@@ -654,6 +678,17 @@ int ORBmatcher::SearchByBoW(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint *> &
     return nmatches;
 }
 
+
+/**
+ * 创建局部地图
+ * 使用pKF1和pKF2的基础矩阵F12，匹配pKF1和pKF2的特征点，将匹配的索引值存入vMatchedPairs
+ * @param pKF1
+ * @param pKF2
+ * @param F12
+ * @param vMatchedPairs
+ * @param bOnlyStereo
+ * @return
+ */
 int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F12,
                                        vector<pair<size_t, size_t> > &vMatchedPairs, const bool bOnlyStereo)
 {    
@@ -822,6 +857,15 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
     return nmatches;
 }
 
+
+/**
+ * 局部建图
+ * 将vpMapPoints投影到pKF中，若和pKF中的MapPoints重复，则合并，否则增补到pKF中
+ * @param pKF
+ * @param vpMapPoints
+ * @param th
+ * @return
+ */
 int ORBmatcher::Fuse(KeyFrame *pKF, const vector<MapPoint *> &vpMapPoints, const float th)
 {
     cv::Mat Rcw = pKF->GetRotation();
@@ -974,6 +1018,17 @@ int ORBmatcher::Fuse(KeyFrame *pKF, const vector<MapPoint *> &vpMapPoints, const
     return nFused;
 }
 
+
+/**
+ * 回环检测
+ * 使用Sim3变换，将vpPoints和pKF进行匹配，若有匹配的MapPoint，则存入vpReplacePoint，若无，则将vpPoints增补到pKF中
+ * @param pKF
+ * @param Scw
+ * @param vpPoints
+ * @param th
+ * @param vpReplacePoint
+ * @return
+ */
 int ORBmatcher::Fuse(KeyFrame *pKF, cv::Mat Scw, const vector<MapPoint *> &vpPoints, float th, vector<MapPoint *> &vpReplacePoint)
 {
     // Get Calibration Parameters for later projection
@@ -1099,6 +1154,19 @@ int ORBmatcher::Fuse(KeyFrame *pKF, cv::Mat Scw, const vector<MapPoint *> &vpPoi
     return nFused;
 }
 
+
+/**
+ * 筛选回环候选关键帧
+ * 使用pKF1和pKF2的Sim3变换，增加pKF1和Pkf2间匹配的MapPoints，并存入vpMatches12中
+ * @param pKF1
+ * @param pKF2
+ * @param vpMatches12
+ * @param s12
+ * @param R12
+ * @param t12
+ * @param th
+ * @return
+ */
 int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &vpMatches12,
                              const float &s12, const cv::Mat &R12, const cv::Mat &t12, const float th)
 {
@@ -1325,6 +1393,15 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
     return nFound;
 }
 
+/**
+ * 用于前端跟踪
+ * 从LastFrame的MapPoints中找到与CurrentFram匹配的MapPoints，增补CurrentFrame的MapPoints
+ * @param CurrentFrame
+ * @param LastFrame
+ * @param th
+ * @param bMono
+ * @return
+ */
 int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, const float th, const bool bMono)
 {
     int nmatches = 0;
@@ -1459,7 +1536,7 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, 
             {
                 for(size_t j=0, jend=rotHist[i].size(); j<jend; j++)
                 {
-                    CurrentFrame.mvpMapPoints[rotHist[i][j]]=static_cast<MapPoint*>(NULL);
+                    CurrentFrame.mvpMapPoints[rotHist[i][j]]=static_cast<MapPoint*>(nullptr);
                     nmatches--;
                 }
             }
@@ -1469,6 +1546,16 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, 
     return nmatches;
 }
 
+/**
+ * 用于重定位
+ * 从pKF的MapPoints中找到与CurrentFrame匹配的MapPoints，以增补CurrentFrame的MapPoints
+ * @param CurrentFrame
+ * @param pKF
+ * @param sAlreadyFound
+ * @param th
+ * @param ORBdist
+ * @return
+ */
 int ORBmatcher::SearchByProjection(Frame &CurrentFrame, KeyFrame *pKF, const set<MapPoint*> &sAlreadyFound, const float th , const int ORBdist)
 {
     int nmatches = 0;
@@ -1598,17 +1685,23 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, KeyFrame *pKF, const set
     return nmatches;
 }
 
+/**
+ * 获取旋转直方图histo上特征点最多的3个bin的索引
+ * @param histo 直方图
+ * @param L 直方图的长度
+ * @param ind1
+ * @param ind2
+ * @param ind3
+ */
 void ORBmatcher::ComputeThreeMaxima(vector<int>* histo, const int L, int &ind1, int &ind2, int &ind3)
 {
     int max1=0;
     int max2=0;
     int max3=0;
 
-    for(int i=0; i<L; i++)
-    {
-        const int s = histo[i].size();
-        if(s>max1)
-        {
+    for(int i=0; i<L; i++){
+        const int s = (int)histo[i].size();
+        if(s>max1){
             max3=max2;
             max2=max1;
             max1=s;
@@ -1616,27 +1709,23 @@ void ORBmatcher::ComputeThreeMaxima(vector<int>* histo, const int L, int &ind1, 
             ind2=ind1;
             ind1=i;
         }
-        else if(s>max2)
-        {
+        else if(s>max2){
             max3=max2;
             max2=s;
             ind3=ind2;
             ind2=i;
         }
-        else if(s>max3)
-        {
+        else if(s>max3){
             max3=s;
             ind3=i;
         }
     }
 
-    if(max2<0.1f*(float)max1)
-    {
+    if((float)max2<0.1f*(float)max1){
         ind2=-1;
         ind3=-1;
     }
-    else if(max3<0.1f*(float)max1)
-    {
+    else if((float)max3<0.1f*(float)max1){
         ind3=-1;
     }
 }
@@ -1644,21 +1733,30 @@ void ORBmatcher::ComputeThreeMaxima(vector<int>* histo, const int L, int &ind1, 
 
 // Bit set count operation from
 // http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
+/**
+ * 计算两个描述子之间的距离
+ * @param a
+ * @param b
+ * @return
+ */
 int ORBmatcher::DescriptorDistance(const cv::Mat &a, const cv::Mat &b)
 {
+    //https://blog.csdn.net/w798396217/article/details/93620407
+    /*
+     * 0x55555555 = 0101 0101 0101 0101 0101 0101 0101 0101 (偶数位为0，奇数位为1）
+     * 0x33333333 = 0011 0011 0011 0011 0011 0011 0011 0011 (1和0每隔两位交替出现)
+     * 0x0F0F0F0F = 0000 1111 0000 1111 0000 1111 0000 1111 (1和0每隔四位交替出现)
+     * 0x01010101 = 0000 0001 0000 0001 0000 0001 0000 0001
+     */
     const int *pa = a.ptr<int32_t>();
     const int *pb = b.ptr<int32_t>();
-
     int dist=0;
-
-    for(int i=0; i<8; i++, pa++, pb++)
-    {
-        unsigned  int v = *pa ^ *pb;
-        v = v - ((v >> 1) & 0x55555555);
-        v = (v & 0x33333333) + ((v >> 2) & 0x33333333);
-        dist += (((v + (v >> 4)) & 0xF0F0F0F) * 0x1010101) >> 24;
+    for(int i=0; i<8; i++, pa++, pb++){//描述子为256维,计算距离时取32维为一组
+        unsigned  int v = *pa ^ *pb;//异或运算,位相同时为0,相异时为1
+        v = v - ((v >> 1) & 0x55555555);//将32位分为16组,看每一组中有几个1. 假设某一组为11,则对应输出为10(两个1)
+        v = (v & 0x33333333) + ((v >> 2) & 0x33333333);//32位分为8组,看的其实还是原来的那个数每8个单位里有几个1.
+        dist += (((v + (v >> 4)) & 0xF0F0F0F) * 0x1010101) >> 24;//0x1010101并且>>24的意思是只保留下了原来的后8位
     }
-
     return dist;
 }
 

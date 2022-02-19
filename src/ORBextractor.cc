@@ -55,7 +55,6 @@
 
 
 #include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <vector>
@@ -69,59 +68,78 @@ using namespace std;
 namespace ORB_SLAM2
 {
 
-const int PATCH_SIZE = 31;
-const int HALF_PATCH_SIZE = 15;
-const int EDGE_THRESHOLD = 19;
+const int PATCH_SIZE = 31;//图像块的边长
+const int HALF_PATCH_SIZE = 15;//图像块的半个边长
+const int EDGE_THRESHOLD = 19;//构造图像金字塔时，每层扩充的边缘
 
 
-static float IC_Angle(const Mat& image, Point2f pt,  const vector<int> & u_max)
+/**
+ * 计算关键点的方向
+ * @param image
+ * @param pt
+ * @param u_max
+ * @return
+ */
+static float IC_Angle(const Mat& image, const Point2f& pt,  const vector<int> & u_max)
 {
-    int m_01 = 0, m_10 = 0;
-
+    /**
+     * 根据图像块的矩来计算关键点的方向，矩的定义： m_pq = sum ( x^p * y_q * I(x,y) ), 其中p,q={0,1} , (x,y)是图像块的像素
+     * 比如：m_01 = sum(y*I(x,y)), m_10=sum(x*I(x,y))
+     */
+    int m_01 = 0, m_10 = 0;//初始化图像块的矩
     const uchar* center = &image.at<uchar> (cvRound(pt.y), cvRound(pt.x));
-
     // Treat the center line differently, v=0
     for (int u = -HALF_PATCH_SIZE; u <= HALF_PATCH_SIZE; ++u)
         m_10 += u * center[u];
-
+    /**
+     * 每个像素的每个通道所占的字节数：M.elemSize1()。对于CV_8UC3，M.elemSize1()==1
+     * 每个像素的字节数：M.elemSize() == M.elemSize1()*M.channels() == M.step[M.dims-1] == M.step[2]。对于CV_8UC3，M.elemSize()==3
+     *
+     * 每行所占的字节数：M.step[0] == M.cols*M.elemSize()。每行的包含的通道数：M.step1[0] = M.step[0]/M.elemSize1()。
+     * 每个元素所占的字节数：M.step[1] ==M.elemSize() ，每个像素的通道数：M.step[1]==M.elemSize()/M.elemSize1()==通道数
+     * 每个像素每个通道的大小：M.step[2] ==
+     */
     // Go line by line in the circuI853lar patch
     int step = (int)image.step1();
-    for (int v = 1; v <= HALF_PATCH_SIZE; ++v)
-    {
+    for (int v = 1; v <= HALF_PATCH_SIZE; ++v){//当PATCH_SIZE==10时，y=1...5
         // Proceed over the two lines
         int v_sum = 0;
         int d = u_max[v];
-        for (int u = -d; u <= d; ++u)
-        {
-            int val_plus = center[u + v*step], val_minus = center[u - v*step];
+        for (int u = -d; u <= d; ++u){//x=-d到d
+            int val_plus = center[u + v*step];//从center往左右两个方向同时遍历
+            int val_minus = center[u - v*step];
             v_sum += (val_plus - val_minus);
-            m_10 += u * (val_plus + val_minus);
+            m_10 += u * (val_plus + val_minus); //x*I(x,y)
         }
-        m_01 += v * v_sum;
+        m_01 += v * v_sum;//m_01 += y*I(x,y)
     }
 
-    return fastAtan2((float)m_01, (float)m_10);
+    return cv::fastAtan2((float)m_01, (float)m_10);
 }
 
-
-const float factorPI = (float)(CV_PI/180.f);
+/**
+ * 计算关键点的描述子
+ * @param kpt 关键点
+ * @param img 图像
+ * @param pattern 模式
+ * @param desc 输出的描述子
+ */
 static void computeOrbDescriptor(const KeyPoint& kpt,
                                  const Mat& img, const Point* pattern,
                                  uchar* desc)
 {
+    ///考虑关键点的方向，后面计算描述子时，对方向进行矫正
+    constexpr float factorPI = (float)CV_PI/180.f;
     float angle = (float)kpt.angle*factorPI;
-    float a = (float)cos(angle), b = (float)sin(angle);
-
+    auto a = (float)cos(angle), b = (float)sin(angle);
     const uchar* center = &img.at<uchar>(cvRound(kpt.pt.y), cvRound(kpt.pt.x));
     const int step = (int)img.step;
-
+    ///根据pattern的索引计算位置，考虑了关键点的描述子
     #define GET_VALUE(idx) \
         center[cvRound(pattern[idx].x*b + pattern[idx].y*a)*step + \
                cvRound(pattern[idx].x*a - pattern[idx].y*b)]
-
-
-    for (int i = 0; i < 32; ++i, pattern += 16)
-    {
+    ///计算描述子的每一位
+    for (int i = 0; i < 32; ++i, pattern += 16){
         int t0, t1, val;
         t0 = GET_VALUE(0); t1 = GET_VALUE(1);
         val = t0 < t1;
@@ -139,16 +157,13 @@ static void computeOrbDescriptor(const KeyPoint& kpt,
         val |= (t0 < t1) << 6;
         t0 = GET_VALUE(14); t1 = GET_VALUE(15);
         val |= (t0 < t1) << 7;
-
         desc[i] = (uchar)val;
     }
-
     #undef GET_VALUE
 }
 
 
-static int bit_pattern_31_[256*4] =
-{
+static int bit_pattern_31_[256*4] ={
     8,-3, 9,5/*mean (0), correlation (0)*/,
     4,2, 7,-12/*mean (1.12461e-05), correlation (0.0437584)*/,
     -11,9, -8,2/*mean (3.37382e-05), correlation (0.0617409)*/,
@@ -407,61 +422,69 @@ static int bit_pattern_31_[256*4] =
     -1,-6, 0,-11/*mean (0.127148), correlation (0.547401)*/
 };
 
+/**
+ * 构造函数
+ * @param _nfeatures
+ * @param _scaleFactor
+ * @param _nlevels
+ * @param _iniThFAST
+ * @param _minThFAST
+ */
 ORBextractor::ORBextractor(int _nfeatures, float _scaleFactor, int _nlevels,
          int _iniThFAST, int _minThFAST):
     nfeatures(_nfeatures), scaleFactor(_scaleFactor), nlevels(_nlevels),
     iniThFAST(_iniThFAST), minThFAST(_minThFAST)
 {
+    //初始化mvScaleFactor和mvLevelSigma2
     mvScaleFactor.resize(nlevels);
     mvLevelSigma2.resize(nlevels);
     mvScaleFactor[0]=1.0f;
     mvLevelSigma2[0]=1.0f;
-    for(int i=1; i<nlevels; i++)
-    {
-        mvScaleFactor[i]=mvScaleFactor[i-1]*scaleFactor;
+    for(int i=1; i<nlevels; i++){
+        mvScaleFactor[i]=float(mvScaleFactor[i-1]*scaleFactor);//由于scaleFactor>=1，因此mvScaleFactor单调递增
         mvLevelSigma2[i]=mvScaleFactor[i]*mvScaleFactor[i];
     }
-
+    //计算每层缩小系数
     mvInvScaleFactor.resize(nlevels);
     mvInvLevelSigma2.resize(nlevels);
-    for(int i=0; i<nlevels; i++)
-    {
+    for(int i=0; i<nlevels; i++){
         mvInvScaleFactor[i]=1.0f/mvScaleFactor[i];
         mvInvLevelSigma2[i]=1.0f/mvLevelSigma2[i];
     }
 
     mvImagePyramid.resize(nlevels);
 
+    ///赋予每层应该检测的特征点数量，从底向上依次递增
+    auto factor = float(1. / scaleFactor);//缩小系数
+    //首先计算最底层金字塔应该检测的特征点数
+    float nDesiredFeaturesPerScale = (float)nfeatures * (1-factor)/(1 - (float)std::pow((double)factor, (double)nlevels));
     mnFeaturesPerLevel.resize(nlevels);
-    float factor = 1.0f / scaleFactor;
-    float nDesiredFeaturesPerScale = nfeatures*(1 - factor)/(1 - (float)pow((double)factor, (double)nlevels));
-
     int sumFeatures = 0;
-    for( int level = 0; level < nlevels-1; level++ )
-    {
+    for( int level = 0; level < nlevels-1; level++ ){
         mnFeaturesPerLevel[level] = cvRound(nDesiredFeaturesPerScale);
         sumFeatures += mnFeaturesPerLevel[level];
         nDesiredFeaturesPerScale *= factor;
     }
     mnFeaturesPerLevel[nlevels-1] = std::max(nfeatures - sumFeatures, 0);
-
+    ///准备计算描述子需要的pattern
     const int npoints = 512;
-    const Point* pattern0 = (const Point*)bit_pattern_31_;
-    std::copy(pattern0, pattern0 + npoints, std::back_inserter(pattern));
+    const auto* pattern0 = (const cv::Point*)bit_pattern_31_;
+    std::copy(pattern0, pattern0 + npoints, std::back_inserter(pattern));//pattern存储了512个点
 
     //This is for orientation
     // pre-compute the end of a row in a circular patch
+    //计算关键点方向的准备工作
+    //要在以keypoint像素点坐标为中心的半径为HALF_PATCH_SIZE的圆内计算关键点的方向
+    //这里存储不同的v（即y轴方向）对应的umax（x轴方向）来描述这个patch圆的范围
     umax.resize(HALF_PATCH_SIZE + 1);
-
-    int v, v0, vmax = cvFloor(HALF_PATCH_SIZE * sqrt(2.f) / 2 + 1);
+    int vmax = cvFloor(HALF_PATCH_SIZE * sqrt(2.f) / 2 + 1);
     int vmin = cvCeil(HALF_PATCH_SIZE * sqrt(2.f) / 2);
     const double hp2 = HALF_PATCH_SIZE*HALF_PATCH_SIZE;
+    int v, v0;
     for (v = 0; v <= vmax; ++v)
         umax[v] = cvRound(sqrt(hp2 - v * v));
-
     // Make sure we are symmetric
-    for (v = HALF_PATCH_SIZE, v0 = 0; v >= vmin; --v)
-    {
+    for (v = HALF_PATCH_SIZE, v0 = 0; v >= vmin; --v){
         while (umax[v0] == umax[v0 + 1])
             ++v0;
         umax[v] = v0;
@@ -469,21 +492,30 @@ ORBextractor::ORBextractor(int _nfeatures, float _scaleFactor, int _nlevels,
     }
 }
 
+/**
+ * 计算所有关键点的方向
+ * @param image
+ * @param keypoints
+ * @param umax
+ */
 static void computeOrientation(const Mat& image, vector<KeyPoint>& keypoints, const vector<int>& umax)
 {
-    for (vector<KeyPoint>::iterator keypoint = keypoints.begin(),
-         keypointEnd = keypoints.end(); keypoint != keypointEnd; ++keypoint)
-    {
-        keypoint->angle = IC_Angle(image, keypoint->pt, umax);
-    }
+    for (auto & keypoint : keypoints)
+        keypoint.angle = IC_Angle(image, keypoint.pt, umax);
 }
 
+/**
+ * 将根节点分裂为4个子节点
+ * @param n1
+ * @param n2
+ * @param n3
+ * @param n4
+ */
 void ExtractorNode::DivideNode(ExtractorNode &n1, ExtractorNode &n2, ExtractorNode &n3, ExtractorNode &n4)
 {
-    const int halfX = ceil(static_cast<float>(UR.x-UL.x)/2);
-    const int halfY = ceil(static_cast<float>(BR.y-UL.y)/2);
-
-    //Define boundaries of childs
+    const int halfX = std::ceil(static_cast<float>(UR.x-UL.x)/2);
+    const int halfY = std::ceil(static_cast<float>(BR.y-UL.y)/2);
+    ///定义每个孩子的边界
     n1.UL = UL;
     n1.UR = cv::Point2i(UL.x+halfX,UL.y);
     n1.BL = cv::Point2i(UL.x,UL.y+halfY);
@@ -508,21 +540,20 @@ void ExtractorNode::DivideNode(ExtractorNode &n1, ExtractorNode &n2, ExtractorNo
     n4.BR = BR;
     n4.vKeys.reserve(vKeys.size());
 
-    //Associate points to childs
-    for(size_t i=0;i<vKeys.size();i++)
-    {
-        const cv::KeyPoint &kp = vKeys[i];
-        if(kp.pt.x<n1.UR.x)
-        {
-            if(kp.pt.y<n1.BR.y)
+    //将关节点分配到各个子节点
+    for(auto & kp : vKeys){
+        if(kp.pt.x<float(n1.UR.x)){
+            if(kp.pt.y<float(n1.BR.y))
                 n1.vKeys.push_back(kp);
             else
                 n3.vKeys.push_back(kp);
         }
-        else if(kp.pt.y<n1.BR.y)
+        else if(kp.pt.y<float(n1.BR.y)){
             n2.vKeys.push_back(kp);
-        else
+        }
+        else{
             n4.vKeys.push_back(kp);
+        }
     }
 
     if(n1.vKeys.size()==1)
@@ -533,337 +564,299 @@ void ExtractorNode::DivideNode(ExtractorNode &n1, ExtractorNode &n2, ExtractorNo
         n3.bNoMore = true;
     if(n4.vKeys.size()==1)
         n4.bNoMore = true;
-
 }
 
+/**
+ * 利用四叉树来筛选提取的关键点，并使得筛选后的特征点数量在预计范围，并均匀分布
+ * @param vToDistributeKeys 输入的关键点
+ * @param minX
+ * @param maxX
+ * @param minY
+ * @param maxY
+ * @param N 预期保留的关键点数量
+ * @param level 所在的金字塔的层数
+ * @return
+ */
 vector<cv::KeyPoint> ORBextractor::DistributeOctTree(const vector<cv::KeyPoint>& vToDistributeKeys, const int &minX,
-                                       const int &maxX, const int &minY, const int &maxY, const int &N, const int &level)
+                                       const int &maxX, const int &minY, const int &maxY, const int &N, const int &level) const
 {
-    // Compute how many initial nodes   
-    const int nIni = round(static_cast<float>(maxX-minX)/(maxY-minY));
+    // Compute how many initial nodes
+    //计算四叉树根节点的数量，根据提取区域的宽高比确定
+    const int nIni = (int)std::round(float(maxX-minX)/float(maxY-minY));
+    //计算每个根节点x轴的范围，注：y轴范围是maxY-minY
+    const float hX = (float)(maxX-minX)/(float)nIni;
 
-    const float hX = static_cast<float>(maxX-minX)/nIni;
-
-    list<ExtractorNode> lNodes;
-
-    vector<ExtractorNode*> vpIniNodes;
+    std::list<ExtractorNode> lNodes;//双向链表
+    vector<ExtractorNode*> vpIniNodes;//用于将vToDistributeKeys分配到父节点时，起索引作用
     vpIniNodes.resize(nIni);
 
-    for(int i=0; i<nIni; i++)
-    {
+    ///构建根节点
+    for(int i=0; i<nIni; i++){//可能有多个根节点
         ExtractorNode ni;
-        ni.UL = cv::Point2i(hX*static_cast<float>(i),0);
-        ni.UR = cv::Point2i(hX*static_cast<float>(i+1),0);
-        ni.BL = cv::Point2i(ni.UL.x,maxY-minY);
-        ni.BR = cv::Point2i(ni.UR.x,maxY-minY);
+        ni.UL = cv::Point2i(int(hX*float(i)),0);//根节点的左上角
+        ni.UR = cv::Point2i(int(hX*float(i+1)),0);//根节点的右上角
+        ni.BL = cv::Point2i(ni.UL.x,maxY-minY);//根节点左下角
+        ni.BR = cv::Point2i(ni.UR.x,maxY-minY);//根节点右下角
         ni.vKeys.reserve(vToDistributeKeys.size());
-
         lNodes.push_back(ni);
         vpIniNodes[i] = &lNodes.back();
     }
 
-    //Associate points to childs
-    for(size_t i=0;i<vToDistributeKeys.size();i++)
-    {
-        const cv::KeyPoint &kp = vToDistributeKeys[i];
-        vpIniNodes[kp.pt.x/hX]->vKeys.push_back(kp);
-    }
+    //可能有多个根节点，将vToDistributeKeys划分到不同的根节点中
+    for(const auto & kp : vToDistributeKeys)
+        vpIniNodes[int(kp.pt.x/hX)]->vKeys.push_back(kp);
 
-    list<ExtractorNode>::iterator lit = lNodes.begin();
-
-    while(lit!=lNodes.end())
-    {
-        if(lit->vKeys.size()==1)
-        {
+    //设置根节点的状态
+    auto lit = lNodes.begin();
+    while(lit!=lNodes.end()){
+        if(lit->vKeys.size()==1){//节点只有一个关键点，设置不分裂状态
             lit->bNoMore=true;
             lit++;
         }
-        else if(lit->vKeys.empty())
+        else if(lit->vKeys.empty()){//节点不包含关键点，删除
             lit = lNodes.erase(lit);
-        else
+        }
+        else{
             lit++;
+        }
     }
 
     bool bFinish = false;
-
     int iteration = 0;
-
-    vector<pair<int,ExtractorNode*> > vSizeAndPointerToNode;
+    vector<pair<int,ExtractorNode*>> vSizeAndPointerToNode;
     vSizeAndPointerToNode.reserve(lNodes.size()*4);
 
-    while(!bFinish)
-    {
+    while(!bFinish){
         iteration++;
-
-        int prevSize = lNodes.size();
-
+        int prevSize =(int)lNodes.size();//分裂前的关键点数量
         lit = lNodes.begin();
-
-        int nToExpand = 0;
-
+        int nToExpand = 0;//待分裂的节点数量
         vSizeAndPointerToNode.clear();
-
-        while(lit!=lNodes.end())
-        {
-            if(lit->bNoMore)
-            {
-                // If node only contains one point do not subdivide and continue
+        ///遍历链表中的根节点
+        //注意这个while循环只遍历在这之前已经存在的节点，lNodes.push_front(xx)操作不影响遍历
+        while(lit!=lNodes.end()){
+            if(lit->bNoMore){ // If node only contains one point do not subdivide and continue
                 lit++;
                 continue;
             }
-            else
-            {
-                // If more than one point, subdivide
+            else {
+                ///超过一个关键点，分裂该节点
                 ExtractorNode n1,n2,n3,n4;
                 lit->DivideNode(n1,n2,n3,n4);
-
-                // Add childs if they contain points
-                if(n1.vKeys.size()>0)
-                {
+                ///将子节点添加到容器中
+                if(!n1.vKeys.empty()){
                     lNodes.push_front(n1);                    
-                    if(n1.vKeys.size()>1)
-                    {
+                    if(n1.vKeys.size()>1){
                         nToExpand++;
-                        vSizeAndPointerToNode.push_back(make_pair(n1.vKeys.size(),&lNodes.front()));
+                        vSizeAndPointerToNode.emplace_back(n1.vKeys.size(),&lNodes.front());
                         lNodes.front().lit = lNodes.begin();
                     }
                 }
-                if(n2.vKeys.size()>0)
-                {
+                if(!n2.vKeys.empty()){
                     lNodes.push_front(n2);
-                    if(n2.vKeys.size()>1)
-                    {
+                    if(n2.vKeys.size()>1){
                         nToExpand++;
-                        vSizeAndPointerToNode.push_back(make_pair(n2.vKeys.size(),&lNodes.front()));
+                        vSizeAndPointerToNode.emplace_back(n2.vKeys.size(),&lNodes.front());
                         lNodes.front().lit = lNodes.begin();
                     }
                 }
-                if(n3.vKeys.size()>0)
-                {
+                if(!n3.vKeys.empty()){
                     lNodes.push_front(n3);
-                    if(n3.vKeys.size()>1)
-                    {
+                    if(n3.vKeys.size()>1){
                         nToExpand++;
-                        vSizeAndPointerToNode.push_back(make_pair(n3.vKeys.size(),&lNodes.front()));
+                        vSizeAndPointerToNode.emplace_back(n3.vKeys.size(),&lNodes.front());
                         lNodes.front().lit = lNodes.begin();
                     }
                 }
-                if(n4.vKeys.size()>0)
-                {
+                if(!n4.vKeys.empty()){
                     lNodes.push_front(n4);
-                    if(n4.vKeys.size()>1)
-                    {
+                    if(n4.vKeys.size()>1){
                         nToExpand++;
-                        vSizeAndPointerToNode.push_back(make_pair(n4.vKeys.size(),&lNodes.front()));
+                        vSizeAndPointerToNode.emplace_back(n4.vKeys.size(),&lNodes.front());
                         lNodes.front().lit = lNodes.begin();
                     }
                 }
 
-                lit=lNodes.erase(lit);
+                lit=lNodes.erase(lit);//将被分裂的节点删除
                 continue;
             }
         }       
 
-        // Finish if there are more nodes than required features
-        // or all nodes contain just one point
-        if((int)lNodes.size()>=N || (int)lNodes.size()==prevSize)
-        {
+        // Finish if there are more nodes than required features or all nodes contain just one point
+        ///如果节点的数量大于所需要的特征数，或每个节点的关键点数量为1，则表示完成分裂了
+        if((int)lNodes.size()>=N || (int)lNodes.size()==prevSize){
             bFinish = true;
         }
-        else if(((int)lNodes.size()+nToExpand*3)>N)
-        {
-
-            while(!bFinish)
-            {
-
-                prevSize = lNodes.size();
-
-                vector<pair<int,ExtractorNode*> > vPrevSizeAndPointerToNode = vSizeAndPointerToNode;
+        ///待分裂的节点数分裂后，数量要大于N，否则就不继续分裂了
+        else if(((int)lNodes.size()+nToExpand*3)>N){
+            while(!bFinish){
+                prevSize = (int)lNodes.size();
+                vector<pair<int,ExtractorNode*>> vPrevSizeAndPointerToNode = vSizeAndPointerToNode;//上次代分裂的节点
                 vSizeAndPointerToNode.clear();
-
-                sort(vPrevSizeAndPointerToNode.begin(),vPrevSizeAndPointerToNode.end());
-                for(int j=vPrevSizeAndPointerToNode.size()-1;j>=0;j--)
-                {
+                ///根据每个节点关键点的数量来排序，从小到大
+                std::sort(vPrevSizeAndPointerToNode.begin(),vPrevSizeAndPointerToNode.end());
+                for(int j=(int)vPrevSizeAndPointerToNode.size()-1;j>=0;j--){
+                    //分裂
                     ExtractorNode n1,n2,n3,n4;
                     vPrevSizeAndPointerToNode[j].second->DivideNode(n1,n2,n3,n4);
-
                     // Add childs if they contain points
-                    if(n1.vKeys.size()>0)
-                    {
+                    if(!n1.vKeys.empty()){
                         lNodes.push_front(n1);
-                        if(n1.vKeys.size()>1)
-                        {
-                            vSizeAndPointerToNode.push_back(make_pair(n1.vKeys.size(),&lNodes.front()));
+                        if(n1.vKeys.size()>1){
+                            vSizeAndPointerToNode.emplace_back(n1.vKeys.size(),&lNodes.front());
                             lNodes.front().lit = lNodes.begin();
                         }
                     }
-                    if(n2.vKeys.size()>0)
-                    {
+                    if(!n2.vKeys.empty()){
                         lNodes.push_front(n2);
-                        if(n2.vKeys.size()>1)
-                        {
-                            vSizeAndPointerToNode.push_back(make_pair(n2.vKeys.size(),&lNodes.front()));
+                        if(n2.vKeys.size()>1){
+                            vSizeAndPointerToNode.emplace_back(n2.vKeys.size(),&lNodes.front());
                             lNodes.front().lit = lNodes.begin();
                         }
                     }
-                    if(n3.vKeys.size()>0)
-                    {
+                    if(!n3.vKeys.empty()){
                         lNodes.push_front(n3);
-                        if(n3.vKeys.size()>1)
-                        {
-                            vSizeAndPointerToNode.push_back(make_pair(n3.vKeys.size(),&lNodes.front()));
+                        if(n3.vKeys.size()>1){
+                            vSizeAndPointerToNode.emplace_back(n3.vKeys.size(),&lNodes.front());
                             lNodes.front().lit = lNodes.begin();
                         }
                     }
-                    if(n4.vKeys.size()>0)
-                    {
+                    if(!n4.vKeys.empty()){
                         lNodes.push_front(n4);
-                        if(n4.vKeys.size()>1)
-                        {
-                            vSizeAndPointerToNode.push_back(make_pair(n4.vKeys.size(),&lNodes.front()));
+                        if(n4.vKeys.size()>1){
+                            vSizeAndPointerToNode.emplace_back(n4.vKeys.size(),&lNodes.front());
                             lNodes.front().lit = lNodes.begin();
                         }
                     }
-
+                    //删除已经分裂的节点
                     lNodes.erase(vPrevSizeAndPointerToNode[j].second->lit);
-
                     if((int)lNodes.size()>=N)
                         break;
                 }
 
                 if((int)lNodes.size()>=N || (int)lNodes.size()==prevSize)
                     bFinish = true;
-
             }
         }
     }
-
     // Retain the best point in each node
     vector<cv::KeyPoint> vResultKeys;
     vResultKeys.reserve(nfeatures);
-    for(list<ExtractorNode>::iterator lit=lNodes.begin(); lit!=lNodes.end(); lit++)
-    {
-        vector<cv::KeyPoint> &vNodeKeys = lit->vKeys;
+    ///取出每个节点中响应最大的关键点作为输出节点
+    for(auto & node : lNodes){
+        vector<cv::KeyPoint> &vNodeKeys = node.vKeys;
         cv::KeyPoint* pKP = &vNodeKeys[0];
         float maxResponse = pKP->response;
-
-        for(size_t k=1;k<vNodeKeys.size();k++)
-        {
-            if(vNodeKeys[k].response>maxResponse)
-            {
+        for(size_t k=1;k<vNodeKeys.size();k++) {
+            if(vNodeKeys[k].response>maxResponse) {
                 pKP = &vNodeKeys[k];
                 maxResponse = vNodeKeys[k].response;
             }
         }
-
         vResultKeys.push_back(*pKP);
     }
-
     return vResultKeys;
 }
 
+/**
+ * 利用四叉树提取高斯金字塔中每层图像的关键点
+ * @param allKeypoints
+ */
 void ORBextractor::ComputeKeyPointsOctTree(vector<vector<KeyPoint> >& allKeypoints)
 {
     allKeypoints.resize(nlevels);
-
-    const float W = 30;
-
-    for (int level = 0; level < nlevels; ++level)
-    {
+    const float W = 30;//网格大小
+    for (int level = 0; level < nlevels; ++level){
+        //计算提取区域的边界,和宽高
         const int minBorderX = EDGE_THRESHOLD-3;
         const int minBorderY = minBorderX;
         const int maxBorderX = mvImagePyramid[level].cols-EDGE_THRESHOLD+3;
         const int maxBorderY = mvImagePyramid[level].rows-EDGE_THRESHOLD+3;
-
+        const auto width = float(maxBorderX-minBorderX);
+        const auto height = float(maxBorderY-minBorderY);
+        //计算网格的数量和宽高
+        const int nCols = (int)(width/W);//w网格数
+        const int nRows = (int)(height/W);//h网格数
+        const int wCell = std::ceil(width/(float)nCols);//每个网格的宽度
+        const int hCell = std::ceil(height/(float)nRows);//每个网格的高度
+        //存储待筛选的关键点
         vector<cv::KeyPoint> vToDistributeKeys;
         vToDistributeKeys.reserve(nfeatures*10);
-
-        const float width = (maxBorderX-minBorderX);
-        const float height = (maxBorderY-minBorderY);
-
-        const int nCols = width/W;
-        const int nRows = height/W;
-        const int wCell = ceil(width/nCols);
-        const int hCell = ceil(height/nRows);
-
-        for(int i=0; i<nRows; i++)
-        {
-            const float iniY =minBorderY+i*hCell;
-            float maxY = iniY+hCell+6;
-
+        ///对每个网格检测关键点
+        for(int i=0; i<nRows; i++){
+            const int iniY =minBorderY + i*hCell;//该行的网格的行上坐标
+            int maxY = iniY+hCell+6;//该行网格的行下坐标，与其它行有6像素的重叠
             if(iniY>=maxBorderY-3)
                 continue;
             if(maxY>maxBorderY)
                 maxY = maxBorderY;
 
-            for(int j=0; j<nCols; j++)
-            {
-                const float iniX =minBorderX+j*wCell;
-                float maxX = iniX+wCell+6;
+            for(int j=0; j<nCols; j++){
+                const int iniX =minBorderX+j*wCell;//该网格的列开始坐标
+                int maxX = iniX+wCell+6;//该网格的列结束坐标
                 if(iniX>=maxBorderX-6)
                     continue;
                 if(maxX>maxBorderX)
                     maxX = maxBorderX;
-
+                //检测该网格的FAST关键点
                 vector<cv::KeyPoint> vKeysCell;
-                FAST(mvImagePyramid[level].rowRange(iniY,maxY).colRange(iniX,maxX),
-                     vKeysCell,iniThFAST,true);
-
-                if(vKeysCell.empty())
-                {
-                    FAST(mvImagePyramid[level].rowRange(iniY,maxY).colRange(iniX,maxX),
+                cv::FAST(mvImagePyramid[level].rowRange((int)iniY,(int)maxY).colRange((int)iniX,(int)maxX),
+                     vKeysCell,iniThFAST,true);//true表示开启了非极大值抑制算法
+                //在该网格检测不到特征点，需要再次检测
+                if(vKeysCell.empty()){
+                    cv::FAST(mvImagePyramid[level].rowRange((int)iniY,(int)maxY).colRange((int)iniX,(int)maxX),
                          vKeysCell,minThFAST,true);
                 }
-
-                if(!vKeysCell.empty())
-                {
-                    for(vector<cv::KeyPoint>::iterator vit=vKeysCell.begin(); vit!=vKeysCell.end();vit++)
-                    {
-                        (*vit).pt.x+=j*wCell;
-                        (*vit).pt.y+=i*hCell;
-                        vToDistributeKeys.push_back(*vit);
+                //将网格中检测的关键点放入到vToDistributeKeys
+                if(!vKeysCell.empty()){
+                    for(auto & key : vKeysCell){
+                        key.pt.x+=float(j*wCell);
+                        key.pt.y+=float(i*hCell);
+                        vToDistributeKeys.push_back(key);
                     }
                 }
-
             }
         }
 
         vector<KeyPoint> & keypoints = allKeypoints[level];
         keypoints.reserve(nfeatures);
-
+        ///筛选vToDistributeKeys的关键点
         keypoints = DistributeOctTree(vToDistributeKeys, minBorderX, maxBorderX,
                                       minBorderY, maxBorderY,mnFeaturesPerLevel[level], level);
-
-        const int scaledPatchSize = PATCH_SIZE*mvScaleFactor[level];
-
-        // Add border to coordinates and scale information
-        const int nkps = keypoints.size();
+        //本层提取的关键点对应的patch大小
+        const int scaledPatchSize = int(PATCH_SIZE*mvScaleFactor[level]);
+        /// Add border to coordinates and scale information
+        const int nkps = (int)keypoints.size();
         for(int i=0; i<nkps ; i++)
         {
             keypoints[i].pt.x+=minBorderX;
             keypoints[i].pt.y+=minBorderY;
             keypoints[i].octave=level;
-            keypoints[i].size = scaledPatchSize;
+            keypoints[i].size = (float)scaledPatchSize;
         }
     }
 
-    // compute orientations
+    ///计算关键点的方向
     for (int level = 0; level < nlevels; ++level)
         computeOrientation(mvImagePyramid[level], allKeypoints[level], umax);
 }
 
+
+/**
+ * 旧的ORB关键点的检测方法（没用到）
+ * @param allKeypoints
+ */
 void ORBextractor::ComputeKeyPointsOld(std::vector<std::vector<KeyPoint> > &allKeypoints)
 {
     allKeypoints.resize(nlevels);
-
-    float imageRatio = (float)mvImagePyramid[0].cols/mvImagePyramid[0].rows;
+    float imageRatio = float(mvImagePyramid[0].cols)/float(mvImagePyramid[0].rows);
 
     for (int level = 0; level < nlevels; ++level)
     {
         const int nDesiredFeatures = mnFeaturesPerLevel[level];
 
-        const int levelCols = sqrt((float)nDesiredFeatures/(5*imageRatio));
-        const int levelRows = imageRatio*levelCols;
+        const int levelCols = (int)std::sqrt((float)nDesiredFeatures/(5*imageRatio));
+        const int levelRows = int(imageRatio*(float)levelCols);
 
         const int minBorderX = EDGE_THRESHOLD;
         const int minBorderY = minBorderX;
@@ -872,11 +865,11 @@ void ORBextractor::ComputeKeyPointsOld(std::vector<std::vector<KeyPoint> > &allK
 
         const int W = maxBorderX - minBorderX;
         const int H = maxBorderY - minBorderY;
-        const int cellW = ceil((float)W/levelCols);
-        const int cellH = ceil((float)H/levelRows);
+        const int cellW = ceil((float)W/(float)levelCols);
+        const int cellH = ceil((float)H/(float)levelRows);
 
         const int nCells = levelRows*levelCols;
-        const int nfeaturesCell = ceil((float)nDesiredFeatures/nCells);
+        const int nfeaturesCell = ceil((float)nDesiredFeatures/(float)nCells);
 
         vector<vector<vector<KeyPoint> > > cellKeyPoints(levelRows, vector<vector<KeyPoint> >(levelCols));
 
@@ -889,21 +882,21 @@ void ORBextractor::ComputeKeyPointsOld(std::vector<std::vector<KeyPoint> > &allK
         int nToDistribute = 0;
 
 
-        float hY = cellH + 6;
+        float hY = (float)cellH + 6;
 
         for(int i=0; i<levelRows; i++)
         {
-            const float iniY = minBorderY + i*cellH - 3;
+            const float iniY = (float)minBorderY + (float)i*(float)cellH - 3;
             iniYRow[i] = iniY;
 
             if(i == levelRows-1)
             {
-                hY = maxBorderY+3-iniY;
+                hY = (float)maxBorderY+3-iniY;
                 if(hY<=0)
                     continue;
             }
 
-            float hX = cellW + 6;
+            float hX = (float)cellW + 6;
 
             for(int j=0; j<levelCols; j++)
             {
@@ -911,7 +904,7 @@ void ORBextractor::ComputeKeyPointsOld(std::vector<std::vector<KeyPoint> > &allK
 
                 if(i==0)
                 {
-                    iniX = minBorderX + j*cellW - 3;
+                    iniX = (float)minBorderX + (float)j*(float)cellW - 3;
                     iniXCol[j] = iniX;
                 }
                 else
@@ -922,13 +915,13 @@ void ORBextractor::ComputeKeyPointsOld(std::vector<std::vector<KeyPoint> > &allK
 
                 if(j == levelCols-1)
                 {
-                    hX = maxBorderX+3-iniX;
+                    hX = (float)maxBorderX+3-iniX;
                     if(hX<=0)
                         continue;
                 }
 
 
-                Mat cellImage = mvImagePyramid[level].rowRange(iniY,iniY+hY).colRange(iniX,iniX+hX);
+                Mat cellImage = mvImagePyramid[level].rowRange((int)iniY,iniY+hY).colRange(iniX,iniX+hX);
 
                 cellKeyPoints[i][j].reserve(nfeaturesCell*5);
 
@@ -966,7 +959,7 @@ void ORBextractor::ComputeKeyPointsOld(std::vector<std::vector<KeyPoint> > &allK
 
         while(nToDistribute>0 && nNoMore<nCells)
         {
-            int nNewFeaturesCell = nfeaturesCell + ceil((float)nToDistribute/(nCells-nNoMore));
+            int nNewFeaturesCell = nfeaturesCell + std::ceil((float)nToDistribute/(float)(nCells-nNoMore));
             nToDistribute = 0;
 
             for(int i=0; i<levelRows; i++)
@@ -1008,13 +1001,13 @@ void ORBextractor::ComputeKeyPointsOld(std::vector<std::vector<KeyPoint> > &allK
                     keysCell.resize(nToRetain[i][j]);
 
 
-                for(size_t k=0, kend=keysCell.size(); k<kend; k++)
+                for(auto & k : keysCell)
                 {
-                    keysCell[k].pt.x+=iniXCol[j];
-                    keysCell[k].pt.y+=iniYRow[i];
-                    keysCell[k].octave=level;
-                    keysCell[k].size = scaledPatchSize;
-                    keypoints.push_back(keysCell[k]);
+                    k.pt.x+=iniXCol[j];
+                    k.pt.y+=iniYRow[i];
+                    k.octave=level;
+                    k.size = scaledPatchSize;
+                    keypoints.push_back(k);
                 }
             }
         }
@@ -1031,6 +1024,13 @@ void ORBextractor::ComputeKeyPointsOld(std::vector<std::vector<KeyPoint> > &allK
         computeOrientation(mvImagePyramid[level], allKeypoints[level], umax);
 }
 
+/**
+ * 计算一个图像的描述子
+ * @param image
+ * @param keypoints
+ * @param descriptors
+ * @param pattern
+ */
 static void computeDescriptors(const Mat& image, vector<KeyPoint>& keypoints, Mat& descriptors,
                                const vector<Point>& pattern)
 {
@@ -1040,95 +1040,101 @@ static void computeDescriptors(const Mat& image, vector<KeyPoint>& keypoints, Ma
         computeOrbDescriptor(keypoints[i], image, &pattern[0], descriptors.ptr((int)i));
 }
 
-void ORBextractor::operator()( InputArray _image, InputArray _mask, vector<KeyPoint>& _keypoints,
-                      OutputArray _descriptors)
-{ 
+
+/**
+ * 计算图像金字塔
+ * @param image
+ */
+void ORBextractor::ComputePyramid(cv::Mat image)
+{
+    for (int level = 0; level < nlevels; ++level)
+    {
+        float scale = mvInvScaleFactor[level];
+        cv::Size sz(cvRound((float)image.cols*scale), cvRound((float)image.rows*scale));//当前层的大小
+        cv::Size wholeSize(sz.width + EDGE_THRESHOLD*2, sz.height + EDGE_THRESHOLD*2);//当前层+边缘的大小
+        Mat temp(wholeSize, image.type());
+        mvImagePyramid[level] = temp(cv::Rect(EDGE_THRESHOLD, EDGE_THRESHOLD, sz.width, sz.height));
+
+        // Compute the resized image
+        if( level != 0 ){
+            //从level-1层下采样到level层
+            resize(mvImagePyramid[level-1], mvImagePyramid[level], sz, 0, 0, INTER_LINEAR);
+            cv::copyMakeBorder(mvImagePyramid[level], temp, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD,
+                           BORDER_REFLECT_101+BORDER_ISOLATED);            
+        }
+        else{
+            cv::copyMakeBorder(image, temp, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD,
+                           BORDER_REFLECT_101);            
+        }
+    }
+
+}
+
+
+
+
+/**
+ * 执行特征提取
+ * @param _image
+ * @param _mask
+ * @param _keypoints
+ * @param _descriptors
+ */
+void ORBextractor::operator()( InputArray _image, InputArray _mask, vector<KeyPoint>& _keypoints,OutputArray _descriptors){
     if(_image.empty())
         return;
-
     Mat image = _image.getMat();
     assert(image.type() == CV_8UC1 );
-
-    // Pre-compute the scale pyramid
+    ///计算图像金字塔
     ComputePyramid(image);
-
-    vector < vector<KeyPoint> > allKeypoints;
+    ///提取图像金字塔各层的关键点并存储在allKeypoints中
+    vector<vector<KeyPoint>> allKeypoints;
     ComputeKeyPointsOctTree(allKeypoints);
     //ComputeKeyPointsOld(allKeypoints);
 
-    Mat descriptors;
-
+    //计算实际提取的关键点的数量
     int nkeypoints = 0;
     for (int level = 0; level < nlevels; ++level)
         nkeypoints += (int)allKeypoints[level].size();
-    if( nkeypoints == 0 )
+
+    //描述子容器
+    Mat descriptors;
+    if( nkeypoints == 0 ){
         _descriptors.release();
-    else
-    {
+    }
+    else{
         _descriptors.create(nkeypoints, 32, CV_8U);
         descriptors = _descriptors.getMat();
     }
-
     _keypoints.clear();
     _keypoints.reserve(nkeypoints);
 
+    ///遍历高斯金字塔的每层，计算描述子，并存储到descriptors中
     int offset = 0;
     for (int level = 0; level < nlevels; ++level)
     {
         vector<KeyPoint>& keypoints = allKeypoints[level];
         int nkeypointsLevel = (int)keypoints.size();
-
         if(nkeypointsLevel==0)
             continue;
-
-        // preprocess the resized image
+        ///使用高斯模糊预处理该层的图像, preprocess the resized image
         Mat workingMat = mvImagePyramid[level].clone();
-        GaussianBlur(workingMat, workingMat, Size(7, 7), 2, 2, BORDER_REFLECT_101);
-
-        // Compute the descriptors
+        cv::GaussianBlur(workingMat, workingMat, Size(7, 7), 2, 2, BORDER_REFLECT_101);
+        ///计算描述子， Compute the descriptors
         Mat desc = descriptors.rowRange(offset, offset + nkeypointsLevel);
         computeDescriptors(workingMat, keypoints, desc, pattern);
-
         offset += nkeypointsLevel;
-
-        // Scale keypoint coordinates
-        if (level != 0)
-        {
+        ///对关键点的坐标作尺度恢复。 Scale keypoint coordinates
+        if (level != 0){
             float scale = mvScaleFactor[level]; //getScale(level, firstLevel, scaleFactor);
-            for (vector<KeyPoint>::iterator keypoint = keypoints.begin(),
-                 keypointEnd = keypoints.end(); keypoint != keypointEnd; ++keypoint)
-                keypoint->pt *= scale;
+            for (auto & keypoint : keypoints)
+                keypoint.pt *= scale;
         }
         // And add the keypoints to the output
         _keypoints.insert(_keypoints.end(), keypoints.begin(), keypoints.end());
     }
 }
 
-void ORBextractor::ComputePyramid(cv::Mat image)
-{
-    for (int level = 0; level < nlevels; ++level)
-    {
-        float scale = mvInvScaleFactor[level];
-        Size sz(cvRound((float)image.cols*scale), cvRound((float)image.rows*scale));
-        Size wholeSize(sz.width + EDGE_THRESHOLD*2, sz.height + EDGE_THRESHOLD*2);
-        Mat temp(wholeSize, image.type()), masktemp;
-        mvImagePyramid[level] = temp(Rect(EDGE_THRESHOLD, EDGE_THRESHOLD, sz.width, sz.height));
 
-        // Compute the resized image
-        if( level != 0 )
-        {
-            resize(mvImagePyramid[level-1], mvImagePyramid[level], sz, 0, 0, INTER_LINEAR);
-
-            copyMakeBorder(mvImagePyramid[level], temp, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD,
-                           BORDER_REFLECT_101+BORDER_ISOLATED);            
-        }
-        else
-        {
-            copyMakeBorder(image, temp, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD,
-                           BORDER_REFLECT_101);            
-        }
-    }
-
-}
 
 } //namespace ORB_SLAM

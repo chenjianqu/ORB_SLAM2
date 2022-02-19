@@ -44,43 +44,44 @@ public:
     static int DescriptorDistance(const cv::Mat &a, const cv::Mat &b);
 
     // Search matches between Frame keypoints and projected MapPoints. Returns number of matches
-    // Used to track the local map (Tracking)
+    // Used to track the local map (Tracking),用于局部地图跟踪
     int SearchByProjection(Frame &F, const std::vector<MapPoint*> &vpMapPoints, const float th=3);
 
     // Project MapPoints tracked in last frame into the current frame and search matches.
-    // Used to track from previous frame (Tracking)
+    // Used to track from previous frame (Tracking),用于前端跟踪
     int SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, const float th, const bool bMono);
 
     // Project MapPoints seen in KeyFrame into the Frame and search matches.
-    // Used in relocalisation (Tracking)
+    // Used in relocalisation (Tracking), 用于重定位
     int SearchByProjection(Frame &CurrentFrame, KeyFrame* pKF, const std::set<MapPoint*> &sAlreadyFound, const float th, const int ORBdist);
 
     // Project MapPoints using a Similarity Transformation and search matches.
-    // Used in loop detection (Loop Closing)
+    // Used in loop detection (Loop Closing),用于回环检测
      int SearchByProjection(KeyFrame* pKF, cv::Mat Scw, const std::vector<MapPoint*> &vpPoints, std::vector<MapPoint*> &vpMatched, int th);
 
     // Search matches between MapPoints in a KeyFrame and ORB in a Frame.
     // Brute force constrained to ORB that belong to the same vocabulary node (at a certain level)
-    // Used in Relocalisation and Loop Detection
+    // Used in Relocalisation and Loop Detection,用于重定位
     int SearchByBoW(KeyFrame *pKF, Frame &F, std::vector<MapPoint*> &vpMapPointMatches);
+    //用于回环检测
     int SearchByBoW(KeyFrame *pKF1, KeyFrame* pKF2, std::vector<MapPoint*> &vpMatches12);
 
-    // Matching for the Map Initialization (only used in the monocular case)
-    int SearchForInitialization(Frame &F1, Frame &F2, std::vector<cv::Point2f> &vbPrevMatched, std::vector<int> &vnMatches12, int windowSize=10);
+    // Matching for the Map Initialization (only used in the monocular case),用于单目初始化
+    int SearchForInitialization(Frame &F1, Frame &F2, std::vector<cv::Point2f> &vbPrevMatched, std::vector<int> &vnMatches12, int windowSize=10) const;
 
-    // Matching to triangulate new MapPoints. Check Epipolar Constraint.
+    // Matching to triangulate new MapPoints. Check Epipolar Constraint. 创建局部地图
     int SearchForTriangulation(KeyFrame *pKF1, KeyFrame* pKF2, cv::Mat F12,
                                std::vector<pair<size_t, size_t> > &vMatchedPairs, const bool bOnlyStereo);
 
     // Search matches between MapPoints seen in KF1 and KF2 transforming by a Sim3 [s12*R12|t12]
-    // In the stereo and RGB-D case, s12=1
+    // In the stereo and RGB-D case, s12=1 , 筛选回环候选关键帧
     int SearchBySim3(KeyFrame* pKF1, KeyFrame* pKF2, std::vector<MapPoint *> &vpMatches12, const float &s12, const cv::Mat &R12, const cv::Mat &t12, const float th);
 
-    // Project MapPoints into KeyFrame and search for duplicated MapPoints.
+    // Project MapPoints into KeyFrame and search for duplicated MapPoints. 局部建图
     int Fuse(KeyFrame* pKF, const vector<MapPoint *> &vpMapPoints, const float th=3.0);
 
-    // Project MapPoints into KeyFrame using a given Sim3 and search for duplicated MapPoints.
-    int Fuse(KeyFrame* pKF, cv::Mat Scw, const std::vector<MapPoint*> &vpPoints, float th, vector<MapPoint *> &vpReplacePoint);
+    // Project MapPoints into KeyFrame using a given Sim3 and search for duplicated MapPoints. 回环检测
+    static int Fuse(KeyFrame* pKF, cv::Mat Scw, const std::vector<MapPoint*> &vpPoints, float th, vector<MapPoint *> &vpReplacePoint);
 
 public:
 
@@ -95,10 +96,11 @@ protected:
 
     float RadiusByViewingCos(const float &viewCos);
 
-    void ComputeThreeMaxima(std::vector<int>* histo, const int L, int &ind1, int &ind2, int &ind3);
+    static void ComputeThreeMaxima(std::vector<int>* histo, const int L, int &ind1, int &ind2, int &ind3);
 
+    //最小的特征点距离bestDist和次小的特征点距离,需要满足此阈值: bestDist/bestDist2 < mfNNratio
     float mfNNratio;
-    bool mbCheckOrientation;
+    bool mbCheckOrientation;//是否检查两个特征点的方向是否匹配
 };
 
 }// namespace ORB_SLAM

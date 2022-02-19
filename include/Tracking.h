@@ -156,13 +156,13 @@ protected:
 
     //ORB
     ORBextractor* mpORBextractorLeft, *mpORBextractorRight;
-    ORBextractor* mpIniORBextractor;
+    ORBextractor* mpIniORBextractor;//用于单目SLAM的初始化,需要检测更多的特征点
 
     //BoW
     ORBVocabulary* mpORBVocabulary;
     KeyFrameDatabase* mpKeyFrameDB;
 
-    // Initalization (only for monocular)
+    // Initalization (only for monocular),单目初始化器
     Initializer* mpInitializer;
 
     //Local Map
@@ -182,9 +182,9 @@ protected:
     Map* mpMap;
 
     //Calibration matrix
-    cv::Mat mK;
-    cv::Mat mDistCoef;
-    float mbf;
+    cv::Mat mK;//相机内参
+    cv::Mat mDistCoef;//矫正系数
+    float mbf;//基线长度
 
     //New KeyFrame rules (according to fps)
     int mMinFrames;

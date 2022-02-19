@@ -44,12 +44,15 @@ void LocalMapping::SetTracker(Tracking *pTracker)
     mpTracker=pTracker;
 }
 
+/**
+ * 线程主循环
+ */
 void LocalMapping::Run()
 {
 
     mbFinished = false;
 
-    while(1)
+    while(true)
     {
         // Tracking will see that Local Mapping is busy
         SetAcceptKeyFrames(false);
@@ -90,9 +93,7 @@ void LocalMapping::Run()
         {
             // Safe area to stop
             while(isStopped() && !CheckFinish())
-            {
-                usleep(3000);
-            }
+                std::this_thread::sleep_for(std::chrono::milliseconds(3000));
             if(CheckFinish())
                 break;
         }
@@ -104,8 +105,7 @@ void LocalMapping::Run()
 
         if(CheckFinish())
             break;
-
-        usleep(3000);
+        std::this_thread::sleep_for(std::chrono::milliseconds(3000));
     }
 
     SetFinish();
@@ -170,7 +170,7 @@ void LocalMapping::ProcessNewKeyFrame()
 void LocalMapping::MapPointCulling()
 {
     // Check Recent Added MapPoints
-    list<MapPoint*>::iterator lit = mlpRecentAddedMapPoints.begin();
+    auto lit = mlpRecentAddedMapPoints.begin();
     const unsigned long int nCurrentKFid = mpCurrentKeyFrame->mnId;
 
     int nThObs;
@@ -552,6 +552,9 @@ cv::Mat LocalMapping::ComputeF12(KeyFrame *&pKF1, KeyFrame *&pKF2)
     return K1.t().inv()*t12x*R12*K2.inv();
 }
 
+/**
+ * 停止局部BA
+ */
 void LocalMapping::RequestStop()
 {
     unique_lock<mutex> lock(mMutexStop);
@@ -593,8 +596,8 @@ void LocalMapping::Release()
         return;
     mbStopped = false;
     mbStopRequested = false;
-    for(list<KeyFrame*>::iterator lit = mlNewKeyFrames.begin(), lend=mlNewKeyFrames.end(); lit!=lend; lit++)
-        delete *lit;
+    for(auto & nkf : mlNewKeyFrames)
+        delete nkf;
     mlNewKeyFrames.clear();
 
     cout << "Local Mapping RELEASE" << endl;
@@ -667,12 +670,12 @@ void LocalMapping::KeyFrameCulling()
                         const int &scaleLevel = pKF->mvKeysUn[i].octave;
                         const map<KeyFrame*, size_t> observations = pMP->GetObservations();
                         int nObs=0;
-                        for(map<KeyFrame*, size_t>::const_iterator mit=observations.begin(), mend=observations.end(); mit!=mend; mit++)
+                        for(auto observation : observations)
                         {
-                            KeyFrame* pKFi = mit->first;
+                            KeyFrame* pKFi = observation.first;
                             if(pKFi==pKF)
                                 continue;
-                            const int &scaleLeveli = pKFi->mvKeysUn[mit->second].octave;
+                            const int &scaleLeveli = pKFi->mvKeysUn[observation.second].octave;
 
                             if(scaleLeveli<=scaleLevel+1)
                             {
@@ -709,14 +712,14 @@ void LocalMapping::RequestReset()
         mbResetRequested = true;
     }
 
-    while(1)
+    while(true)
     {
         {
             unique_lock<mutex> lock2(mMutexReset);
             if(!mbResetRequested)
                 break;
         }
-        usleep(3000);
+        std::this_thread::sleep_for((std::chrono::milliseconds(3000)));
     }
 }
 

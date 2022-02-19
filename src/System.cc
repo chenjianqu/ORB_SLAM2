@@ -25,12 +25,29 @@
 #include <thread>
 #include <pangolin/pangolin.h>
 #include <iomanip>
+#include <chrono>
 
-namespace ORB_SLAM2
-{
+
+namespace ORB_SLAM2{ \
+
+/*ORB-SLAM变量命名
+// 程序中变量名的第一个字母如果为"m"则表示为类中的成员变量，member
+// 第一个、第二个字母:
+// "p"表示指针数据类型
+// "n"表示int类型
+// "b"表示bool类型
+// "s"表示set类型
+// "v"表示vector数据类型
+// 'l'表示list数据类型
+// "KF"表示KeyPoint数据类型
+// "Cov"表示协方差
+// "Th"表示阈值
+// "Prior"表示先验
+// "sigma"表示随机变量的标准差（因此在算协方差时用sigma2）
+ */
 
 System::System(const string &strVocFile, const string &strSettingsFile, const eSensor sensor,
-               const bool bUseViewer):mSensor(sensor), mpViewer(static_cast<Viewer*>(NULL)), mbReset(false),mbActivateLocalizationMode(false),
+               const bool bUseViewer):mSensor(sensor), mpViewer(static_cast<Viewer*>(nullptr)), mbReset(false),mbActivateLocalizationMode(false),
         mbDeactivateLocalizationMode(false)
 {
     // Output welcome message
@@ -130,9 +147,7 @@ cv::Mat System::TrackStereo(const cv::Mat &imLeft, const cv::Mat &imRight, const
 
             // Wait until Local Mapping has effectively stopped
             while(!mpLocalMapper->isStopped())
-            {
-                usleep(1000);
-            }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
             mpTracker->InformOnlyTracking(true);
             mbActivateLocalizationMode = false;
@@ -181,9 +196,7 @@ cv::Mat System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const doub
 
             // Wait until Local Mapping has effectively stopped
             while(!mpLocalMapper->isStopped())
-            {
-                usleep(1000);
-            }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
             mpTracker->InformOnlyTracking(true);
             mbActivateLocalizationMode = false;
@@ -215,10 +228,15 @@ cv::Mat System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const doub
     return Tcw;
 }
 
+/**
+ * 入口函数
+ * @param im
+ * @param timestamp
+ * @return
+ */
 cv::Mat System::TrackMonocular(const cv::Mat &im, const double &timestamp)
 {
-    if(mSensor!=MONOCULAR)
-    {
+    if(mSensor!=MONOCULAR){
         cerr << "ERROR: you called TrackMonocular but input sensor was not set to Monocular." << endl;
         exit(-1);
     }
@@ -229,12 +247,9 @@ cv::Mat System::TrackMonocular(const cv::Mat &im, const double &timestamp)
         if(mbActivateLocalizationMode)
         {
             mpLocalMapper->RequestStop();
-
             // Wait until Local Mapping has effectively stopped
             while(!mpLocalMapper->isStopped())
-            {
-                usleep(1000);
-            }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
             mpTracker->InformOnlyTracking(true);
             mbActivateLocalizationMode = false;
@@ -306,14 +321,13 @@ void System::Shutdown()
     {
         mpViewer->RequestFinish();
         while(!mpViewer->isFinished())
-            usleep(5000);
+            std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+
     }
 
     // Wait until all thread have effectively stopped
     while(!mpLocalMapper->isFinished() || !mpLoopCloser->isFinished() || mpLoopCloser->isRunningGBA())
-    {
-        usleep(5000);
-    }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5000));
 
     if(mpViewer)
         pangolin::BindToContext("ORB-SLAM2: Map Viewer");
@@ -345,10 +359,10 @@ void System::SaveTrajectoryTUM(const string &filename)
 
     // For each frame we have a reference keyframe (lRit), the timestamp (lT) and a flag
     // which is true when tracking failed (lbL).
-    list<ORB_SLAM2::KeyFrame*>::iterator lRit = mpTracker->mlpReferences.begin();
-    list<double>::iterator lT = mpTracker->mlFrameTimes.begin();
-    list<bool>::iterator lbL = mpTracker->mlbLost.begin();
-    for(list<cv::Mat>::iterator lit=mpTracker->mlRelativeFramePoses.begin(),
+    auto lRit = mpTracker->mlpReferences.begin();
+    auto lT = mpTracker->mlFrameTimes.begin();
+    auto lbL = mpTracker->mlbLost.begin();
+    for(auto lit=mpTracker->mlRelativeFramePoses.begin(),
         lend=mpTracker->mlRelativeFramePoses.end();lit!=lend;lit++, lRit++, lT++, lbL++)
     {
         if(*lbL)
@@ -395,11 +409,9 @@ void System::SaveKeyFrameTrajectoryTUM(const string &filename)
     f.open(filename.c_str());
     f << fixed;
 
-    for(size_t i=0; i<vpKFs.size(); i++)
+    for(auto pKF : vpKFs)
     {
-        KeyFrame* pKF = vpKFs[i];
-
-       // pKF->SetPose(pKF->GetPose()*Two);
+        // pKF->SetPose(pKF->GetPose()*Two);
 
         if(pKF->isBad())
             continue;
@@ -442,9 +454,9 @@ void System::SaveTrajectoryKITTI(const string &filename)
 
     // For each frame we have a reference keyframe (lRit), the timestamp (lT) and a flag
     // which is true when tracking failed (lbL).
-    list<ORB_SLAM2::KeyFrame*>::iterator lRit = mpTracker->mlpReferences.begin();
-    list<double>::iterator lT = mpTracker->mlFrameTimes.begin();
-    for(list<cv::Mat>::iterator lit=mpTracker->mlRelativeFramePoses.begin(), lend=mpTracker->mlRelativeFramePoses.end();lit!=lend;lit++, lRit++, lT++)
+    auto lRit = mpTracker->mlpReferences.begin();
+    auto lT = mpTracker->mlFrameTimes.begin();
+    for(auto lit=mpTracker->mlRelativeFramePoses.begin(), lend=mpTracker->mlRelativeFramePoses.end();lit!=lend;lit++, lRit++, lT++)
     {
         ORB_SLAM2::KeyFrame* pKF = *lRit;
 

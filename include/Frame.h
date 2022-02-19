@@ -32,10 +32,10 @@
 
 #include <opencv2/opencv.hpp>
 
-namespace ORB_SLAM2
-{
-#define FRAME_GRID_ROWS 48
-#define FRAME_GRID_COLS 64
+namespace ORB_SLAM2{ \
+
+#define FRAME_GRID_ROWS 48 //网格的行数
+#define FRAME_GRID_COLS 64 //网格的列数
 
 class MapPoint;
 class KeyFrame;
@@ -84,7 +84,7 @@ public:
     bool isInFrustum(MapPoint* pMP, float viewingCosLimit);
 
     // Compute the cell of a keypoint (return false if outside the grid)
-    bool PosInGrid(const cv::KeyPoint &kp, int &posX, int &posY);
+    static bool PosInGrid(const cv::KeyPoint &kp, int &posX, int &posY);
 
     vector<size_t> GetFeaturesInArea(const float &x, const float  &y, const float  &r, const int minLevel=-1, const int maxLevel=-1) const;
 
@@ -127,9 +127,7 @@ public:
     // Threshold close/far points. Close points are inserted from 1 view.
     // Far points are inserted as in the monocular case from 2 views.
     float mThDepth;
-
-    // Number of KeyPoints.
-    int N;
+    int N;// Number of KeyPoints.关键点的数量
 
     // Vector of keypoints (original for visualization) and undistorted (actually used by the system).
     // In the stereo case, mvKeysUn is redundant as images must be rectified.
@@ -158,6 +156,7 @@ public:
     // Keypoints are assigned to cells in a grid to reduce matching complexity when projecting MapPoints.
     static float mfGridElementWidthInv;
     static float mfGridElementHeightInv;
+    //网格数组, 数组的每个元素是vector,保存属于该网格的特征点的索引
     std::vector<std::size_t> mGrid[FRAME_GRID_COLS][FRAME_GRID_ROWS];
 
     // Camera pose.

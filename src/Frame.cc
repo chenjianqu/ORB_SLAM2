@@ -57,10 +57,22 @@ Frame::Frame(const Frame &frame)
         SetPose(frame.mTcw);
 }
 
-
+/**
+ * 双目构造函数
+ * @param imLeft
+ * @param imRight
+ * @param timeStamp
+ * @param extractorLeft
+ * @param extractorRight
+ * @param voc
+ * @param K
+ * @param distCoef
+ * @param bf
+ * @param thDepth
+ */
 Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeStamp, ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth)
     :mpORBvocabulary(voc),mpORBextractorLeft(extractorLeft),mpORBextractorRight(extractorRight), mTimeStamp(timeStamp), mK(K.clone()),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth),
-     mpReferenceKF(static_cast<KeyFrame*>(NULL))
+     mpReferenceKF(static_cast<KeyFrame*>(nullptr))
 {
     // Frame ID
     mnId=nNextId++;
@@ -89,7 +101,7 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
 
     ComputeStereoMatches();
 
-    mvpMapPoints = vector<MapPoint*>(N,static_cast<MapPoint*>(NULL));    
+    mvpMapPoints = vector<MapPoint*>(N,static_cast<MapPoint*>(nullptr));
     mvbOutlier = vector<bool>(N,false);
 
 
@@ -116,8 +128,20 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
     AssignFeaturesToGrid();
 }
 
+/**
+ * RGB-D帧构造函数
+ * @param imGray
+ * @param imDepth
+ * @param timeStamp
+ * @param extractor
+ * @param voc
+ * @param K
+ * @param distCoef
+ * @param bf
+ * @param thDepth
+ */
 Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth)
-    :mpORBvocabulary(voc),mpORBextractorLeft(extractor),mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
+    :mpORBvocabulary(voc),mpORBextractorLeft(extractor),mpORBextractorRight(static_cast<ORBextractor*>(nullptr)),
      mTimeStamp(timeStamp), mK(K.clone()),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth)
 {
     // Frame ID
@@ -144,7 +168,7 @@ Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeSt
 
     ComputeStereoFromRGBD(imDepth);
 
-    mvpMapPoints = vector<MapPoint*>(N,static_cast<MapPoint*>(NULL));
+    mvpMapPoints = vector<MapPoint*>(N,static_cast<MapPoint*>(nullptr));
     mvbOutlier = vector<bool>(N,false);
 
     // This is done only for the first Frame (or after a change in the calibration)
@@ -170,14 +194,24 @@ Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeSt
     AssignFeaturesToGrid();
 }
 
-
-Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth)
-    :mpORBvocabulary(voc),mpORBextractorLeft(extractor),mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
+/**
+ * 单目帧构造函数
+ * @param imGray
+ * @param timeStamp
+ * @param extractor
+ * @param voc
+ * @param K
+ * @param distCoef
+ * @param bf
+ * @param thDepth
+ */
+Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc,
+             cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth)
+    :mpORBvocabulary(voc),mpORBextractorLeft(extractor),mpORBextractorRight(static_cast<ORBextractor*>(nullptr)),
      mTimeStamp(timeStamp), mK(K.clone()),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth)
 {
     // Frame ID
     mnId=nNextId++;
-
     // Scale Level Info
     mnScaleLevels = mpORBextractorLeft->GetLevels();
     mfScaleFactor = mpORBextractorLeft->GetScaleFactor();
@@ -186,50 +220,48 @@ Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extra
     mvInvScaleFactors = mpORBextractorLeft->GetInverseScaleFactors();
     mvLevelSigma2 = mpORBextractorLeft->GetScaleSigmaSquares();
     mvInvLevelSigma2 = mpORBextractorLeft->GetInverseScaleSigmaSquares();
-
-    // ORB extraction
+    ///ORB特征提取
     ExtractORB(0,imGray);
-
-    N = mvKeys.size();
-
+    N = (int)mvKeys.size();
     if(mvKeys.empty())
         return;
-
+    ///去畸变
     UndistortKeyPoints();
-
     // Set no stereo information
     mvuRight = vector<float>(N,-1);
     mvDepth = vector<float>(N,-1);
 
-    mvpMapPoints = vector<MapPoint*>(N,static_cast<MapPoint*>(NULL));
+    mvpMapPoints = vector<MapPoint*>(N,static_cast<MapPoint*>(nullptr));
     mvbOutlier = vector<bool>(N,false);
 
-    // This is done only for the first Frame (or after a change in the calibration)
+    ///第一帧需要做一些工作. This is done only for the first Frame (or after a change in the calibration)
     if(mbInitialComputations)
     {
+        //计算图像边界
         ComputeImageBounds(imGray);
-
+        //每个网格大小的倒数
         mfGridElementWidthInv=static_cast<float>(FRAME_GRID_COLS)/static_cast<float>(mnMaxX-mnMinX);
         mfGridElementHeightInv=static_cast<float>(FRAME_GRID_ROWS)/static_cast<float>(mnMaxY-mnMinY);
-
+        //内参赋值
         fx = K.at<float>(0,0);
         fy = K.at<float>(1,1);
         cx = K.at<float>(0,2);
         cy = K.at<float>(1,2);
         invfx = 1.0f/fx;
         invfy = 1.0f/fy;
-
         mbInitialComputations=false;
     }
-
     mb = mbf/fx;
-
+    ///将检测到的特征点划分到网格中
     AssignFeaturesToGrid();
 }
 
+/**
+ * 将检测到的特征点划分到网格中
+ */
 void Frame::AssignFeaturesToGrid()
 {
-    int nReserve = 0.5f*N/(FRAME_GRID_COLS*FRAME_GRID_ROWS);
+    int nReserve = int(0.5f*(float)N/(FRAME_GRID_COLS*FRAME_GRID_ROWS));
     for(unsigned int i=0; i<FRAME_GRID_COLS;i++)
         for (unsigned int j=0; j<FRAME_GRID_ROWS;j++)
             mGrid[i][j].reserve(nReserve);
@@ -237,13 +269,17 @@ void Frame::AssignFeaturesToGrid()
     for(int i=0;i<N;i++)
     {
         const cv::KeyPoint &kp = mvKeysUn[i];
-
         int nGridPosX, nGridPosY;
         if(PosInGrid(kp,nGridPosX,nGridPosY))
             mGrid[nGridPosX][nGridPosY].push_back(i);
     }
 }
 
+/**
+ * 抽取ORB特征
+ * @param flag
+ * @param im
+ */
 void Frame::ExtractORB(int flag, const cv::Mat &im)
 {
     if(flag==0)
@@ -324,54 +360,53 @@ bool Frame::isInFrustum(MapPoint *pMP, float viewingCosLimit)
     return true;
 }
 
+/**
+ * 获得以(x,y)为中心,半径为r的区域内的特征点
+ * @param x
+ * @param y
+ * @param r 半径(曼哈顿距离)
+ * @param minLevel 寻找特征的最底层
+ * @param maxLevel 寻找特征的最顶层
+ * @return
+ */
 vector<size_t> Frame::GetFeaturesInArea(const float &x, const float  &y, const float  &r, const int minLevel, const int maxLevel) const
 {
     vector<size_t> vIndices;
     vIndices.reserve(N);
-
-    const int nMinCellX = max(0,(int)floor((x-mnMinX-r)*mfGridElementWidthInv));
+    ///给定的区域无效
+    const int nMinCellX = std::max(0,(int)std::floor((x-mnMinX-r)*mfGridElementWidthInv));
     if(nMinCellX>=FRAME_GRID_COLS)
         return vIndices;
-
-    const int nMaxCellX = min((int)FRAME_GRID_COLS-1,(int)ceil((x-mnMinX+r)*mfGridElementWidthInv));
+    const int nMaxCellX = std::min((int)FRAME_GRID_COLS-1,(int)std::ceil((x-mnMinX+r)*mfGridElementWidthInv));
     if(nMaxCellX<0)
         return vIndices;
-
-    const int nMinCellY = max(0,(int)floor((y-mnMinY-r)*mfGridElementHeightInv));
+    const int nMinCellY = std::max(0,(int)std::floor((y-mnMinY-r)*mfGridElementHeightInv));
     if(nMinCellY>=FRAME_GRID_ROWS)
         return vIndices;
-
-    const int nMaxCellY = min((int)FRAME_GRID_ROWS-1,(int)ceil((y-mnMinY+r)*mfGridElementHeightInv));
+    const int nMaxCellY = std::min((int)FRAME_GRID_ROWS-1,(int)std::ceil((y-mnMinY+r)*mfGridElementHeightInv));
     if(nMaxCellY<0)
         return vIndices;
 
     const bool bCheckLevels = (minLevel>0) || (maxLevel>=0);
-
-    for(int ix = nMinCellX; ix<=nMaxCellX; ix++)
-    {
-        for(int iy = nMinCellY; iy<=nMaxCellY; iy++)
-        {
+    ///遍历给定区域的网格
+    for(int ix = nMinCellX; ix<=nMaxCellX; ix++){
+        for(int iy = nMinCellY; iy<=nMaxCellY; iy++){
             const vector<size_t> vCell = mGrid[ix][iy];
             if(vCell.empty())
                 continue;
-
-            for(size_t j=0, jend=vCell.size(); j<jend; j++)
-            {
-                const cv::KeyPoint &kpUn = mvKeysUn[vCell[j]];
-                if(bCheckLevels)
-                {
+            ///遍历某个网格中的所有特征点
+            for(unsigned long idx : vCell){
+                const cv::KeyPoint &kpUn = mvKeysUn[idx];
+                if(bCheckLevels){
                     if(kpUn.octave<minLevel)
                         continue;
-                    if(maxLevel>=0)
-                        if(kpUn.octave>maxLevel)
+                    if(maxLevel>=0 && kpUn.octave>maxLevel)
                             continue;
                 }
-
                 const float distx = kpUn.pt.x-x;
                 const float disty = kpUn.pt.y-y;
-
-                if(fabs(distx)<r && fabs(disty)<r)
-                    vIndices.push_back(vCell[j]);
+                if(std::fabs(distx)<r && std::fabs(disty)<r) //判断是否满足条件
+                    vIndices.push_back(idx);
             }
         }
     }
@@ -379,15 +414,20 @@ vector<size_t> Frame::GetFeaturesInArea(const float &x, const float  &y, const f
     return vIndices;
 }
 
+/**
+ * 计算关键点所处的网格
+ * @param kp
+ * @param posX
+ * @param posY
+ * @return 不在有效网格中
+ */
 bool Frame::PosInGrid(const cv::KeyPoint &kp, int &posX, int &posY)
 {
-    posX = round((kp.pt.x-mnMinX)*mfGridElementWidthInv);
-    posY = round((kp.pt.y-mnMinY)*mfGridElementHeightInv);
-
+    posX = (int)std::round((kp.pt.x-mnMinX)*mfGridElementWidthInv);
+    posY = (int)std::round((kp.pt.y-mnMinY)*mfGridElementHeightInv);
     //Keypoint's coordinates are undistorted, which could cause to go out of the image
     if(posX<0 || posX>=FRAME_GRID_COLS || posY<0 || posY>=FRAME_GRID_ROWS)
         return false;
-
     return true;
 }
 
@@ -401,28 +441,26 @@ void Frame::ComputeBoW()
     }
 }
 
+/**
+ * 对检测的特征点去畸变
+ */
 void Frame::UndistortKeyPoints()
 {
-    if(mDistCoef.at<float>(0)==0.0)
-    {
+    if(mDistCoef.at<float>(0)==0.0){
         mvKeysUn=mvKeys;
         return;
     }
-
-    // Fill matrix with points
+    ///将点输入到Mat中
     cv::Mat mat(N,2,CV_32F);
-    for(int i=0; i<N; i++)
-    {
+    for(int i=0; i<N; i++){
         mat.at<float>(i,0)=mvKeys[i].pt.x;
         mat.at<float>(i,1)=mvKeys[i].pt.y;
     }
-
-    // Undistort points
+    ///调用库函数去畸变
     mat=mat.reshape(2);
     cv::undistortPoints(mat,mat,mK,mDistCoef,cv::Mat(),mK);
     mat=mat.reshape(1);
-
-    // Fill undistorted keypoint vector
+    ///将去畸变后的点放入到mvKeysUn中
     mvKeysUn.resize(N);
     for(int i=0; i<N; i++)
     {
@@ -433,29 +471,30 @@ void Frame::UndistortKeyPoints()
     }
 }
 
+/**
+ * 根据畸变系数计算图像的四个边界:mnMinX mnMaxX mnMinY mnMaxY
+ * @param imLeft
+ */
 void Frame::ComputeImageBounds(const cv::Mat &imLeft)
 {
-    if(mDistCoef.at<float>(0)!=0.0)
-    {
+    if(mDistCoef.at<float>(0)!=0.0){
+        //构造四个边界点
         cv::Mat mat(4,2,CV_32F);
         mat.at<float>(0,0)=0.0; mat.at<float>(0,1)=0.0;
         mat.at<float>(1,0)=imLeft.cols; mat.at<float>(1,1)=0.0;
         mat.at<float>(2,0)=0.0; mat.at<float>(2,1)=imLeft.rows;
         mat.at<float>(3,0)=imLeft.cols; mat.at<float>(3,1)=imLeft.rows;
-
-        // Undistort corners
+        //对这四个边界点去畸变
         mat=mat.reshape(2);
         cv::undistortPoints(mat,mat,mK,mDistCoef,cv::Mat(),mK);
         mat=mat.reshape(1);
-
+        //得到四个边界
         mnMinX = min(mat.at<float>(0,0),mat.at<float>(2,0));
         mnMaxX = max(mat.at<float>(1,0),mat.at<float>(3,0));
         mnMinY = min(mat.at<float>(0,1),mat.at<float>(1,1));
         mnMaxY = max(mat.at<float>(2,1),mat.at<float>(3,1));
-
     }
-    else
-    {
+    else{
         mnMinX = 0.0f;
         mnMaxX = imLeft.cols;
         mnMinY = 0.0f;
@@ -478,7 +517,7 @@ void Frame::ComputeStereoMatches()
     for(int i=0; i<nRows; i++)
         vRowIndices[i].reserve(200);
 
-    const int Nr = mvKeysRight.size();
+    const int Nr = (int)mvKeysRight.size();
 
     for(int iR=0; iR<Nr; iR++)
     {
@@ -525,9 +564,8 @@ void Frame::ComputeStereoMatches()
         const cv::Mat &dL = mDescriptors.row(iL);
 
         // Compare descriptor to right keypoints
-        for(size_t iC=0; iC<vCandidates.size(); iC++)
+        for(unsigned long iR : vCandidates)
         {
-            const size_t iR = vCandidates[iC];
             const cv::KeyPoint &kpR = mvKeysRight[iR];
 
             if(kpR.octave<levelL-1 || kpR.octave>levelL+1)
@@ -618,7 +656,7 @@ void Frame::ComputeStereoMatches()
                 }
                 mvDepth[iL]=mbf/disparity;
                 mvuRight[iL] = bestuR;
-                vDistIdx.push_back(pair<int,int>(bestDist,iL));
+                vDistIdx.emplace_back(bestDist,iL);
             }
         }
     }
@@ -676,7 +714,7 @@ cv::Mat Frame::UnprojectStereo(const int &i)
         return mRwc*x3Dc+mOw;
     }
     else
-        return cv::Mat();
+        return {};
 }
 
 } //namespace ORB_SLAM

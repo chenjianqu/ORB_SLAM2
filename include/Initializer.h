@@ -31,9 +31,7 @@ namespace ORB_SLAM2
 class Initializer
 {
     typedef pair<int,int> Match;
-
 public:
-
     // Fix the reference frame
     Initializer(const Frame &ReferenceFrame, float sigma = 1.0, int iterations = 200);
 
@@ -42,14 +40,13 @@ public:
     bool Initialize(const Frame &CurrentFrame, const vector<int> &vMatches12,
                     cv::Mat &R21, cv::Mat &t21, vector<cv::Point3f> &vP3D, vector<bool> &vbTriangulated);
 
-
 private:
 
     void FindHomography(vector<bool> &vbMatchesInliers, float &score, cv::Mat &H21);
     void FindFundamental(vector<bool> &vbInliers, float &score, cv::Mat &F21);
 
-    cv::Mat ComputeH21(const vector<cv::Point2f> &vP1, const vector<cv::Point2f> &vP2);
-    cv::Mat ComputeF21(const vector<cv::Point2f> &vP1, const vector<cv::Point2f> &vP2);
+    static cv::Mat ComputeH21(const vector<cv::Point2f> &vP1, const vector<cv::Point2f> &vP2);
+    static cv::Mat ComputeF21(const vector<cv::Point2f> &vP1, const vector<cv::Point2f> &vP2);
 
     float CheckHomography(const cv::Mat &H21, const cv::Mat &H12, vector<bool> &vbMatchesInliers, float sigma);
 
@@ -61,37 +58,33 @@ private:
     bool ReconstructH(vector<bool> &vbMatchesInliers, cv::Mat &H21, cv::Mat &K,
                       cv::Mat &R21, cv::Mat &t21, vector<cv::Point3f> &vP3D, vector<bool> &vbTriangulated, float minParallax, int minTriangulated);
 
-    void Triangulate(const cv::KeyPoint &kp1, const cv::KeyPoint &kp2, const cv::Mat &P1, const cv::Mat &P2, cv::Mat &x3D);
+    static void Triangulate(const cv::KeyPoint &kp1, const cv::KeyPoint &kp2, const cv::Mat &P1, const cv::Mat &P2, cv::Mat &x3D);
 
-    void Normalize(const vector<cv::KeyPoint> &vKeys, vector<cv::Point2f> &vNormalizedPoints, cv::Mat &T);
+    static void Normalize(const vector<cv::KeyPoint> &vKeys, vector<cv::Point2f> &vNormalizedPoints, cv::Mat &T);
 
-    int CheckRT(const cv::Mat &R, const cv::Mat &t, const vector<cv::KeyPoint> &vKeys1, const vector<cv::KeyPoint> &vKeys2,
+    static int CheckRT(const cv::Mat &R, const cv::Mat &t, const vector<cv::KeyPoint> &vKeys1, const vector<cv::KeyPoint> &vKeys2,
                        const vector<Match> &vMatches12, vector<bool> &vbInliers,
                        const cv::Mat &K, vector<cv::Point3f> &vP3D, float th2, vector<bool> &vbGood, float &parallax);
 
-    void DecomposeE(const cv::Mat &E, cv::Mat &R1, cv::Mat &R2, cv::Mat &t);
+    static void DecomposeE(const cv::Mat &E, cv::Mat &R1, cv::Mat &R2, cv::Mat &t);
 
-
-    // Keypoints from Reference Frame (Frame 1)
+    // Keypoints from Reference Frame (Frame 1),参考帧中的特征点
     vector<cv::KeyPoint> mvKeys1;
-
-    // Keypoints from Current Frame (Frame 2)
+    // Keypoints from Current Frame (Frame 2),当前帧中的特征点
     vector<cv::KeyPoint> mvKeys2;
-
-    // Current Matches from Reference to Current
+    // Current Matches from Reference to Current,从参考帧到当前帧的匹配点对的索引
     vector<Match> mvMatches12;
+    //用于标志参考帧中的特征点是否匹配当前帧的特征点
     vector<bool> mvbMatched1;
-
-    // Calibration
+    // Calibration ,相机内参
     cv::Mat mK;
-
-    // Standard Deviation and Variance
-    float mSigma, mSigma2;
-
+    // Standard Deviation and Variance,重投影误差阈值
+    float mSigma;
+    //重投影阈值的平方
+    float mSigma2;
     // Ransac max iterations
     int mMaxIterations;
-
-    // Ransac sets
+    // Ransac sets,二维容器,Nx8,每行保存RANSAC计算出H和F矩阵所需的8对点
     vector<vector<size_t> > mvSets;   
 
 };
