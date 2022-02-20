@@ -478,9 +478,8 @@ void LoopClosing::CorrectLoop()
             g2o::Sim3 g2oSiw =NonCorrectedSim3[pKFi];
 
             vector<MapPoint*> vpMPsi = pKFi->GetMapPointMatches();
-            for(size_t iMP=0, endMPi = vpMPsi.size(); iMP<endMPi; iMP++)
+            for(auto pMPi : vpMPsi)
             {
-                MapPoint* pMPi = vpMPsi[iMP];
                 if(!pMPi)
                     continue;
                 if(pMPi->isBad())

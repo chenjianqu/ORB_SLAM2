@@ -100,92 +100,105 @@ public:
 
 public:
     // Vocabulary used for relocalization.
-    ORBVocabulary* mpORBvocabulary;
+    ORBVocabulary* mpORBvocabulary;//用于重定位的ORB特征字典
 
     // Feature extractor. The right is used only in the stereo case.
+    //ORB特征提取器句柄,其中右侧的提取器句柄只会在双目输入的情况中才会被用到
     ORBextractor* mpORBextractorLeft, *mpORBextractorRight;
 
     // Frame timestamp.
-    double mTimeStamp;
+    double mTimeStamp;//帧的时间戳
 
     // Calibration matrix and OpenCV distortion parameters.
-    cv::Mat mK;
-    static float fx;
-    static float fy;
-    static float cx;
-    static float cy;
-    static float invfx;
-    static float invfy;
-    cv::Mat mDistCoef;
+    cv::Mat mK; //相机的内参数矩阵
+    static float fx;        ///<x轴方向焦距
+    static float fy;        ///<y轴方向焦距
+    static float cx;        ///<x轴方向光心偏移
+    static float cy;        ///<y轴方向光心偏移
+    static float invfx;     ///<x轴方向焦距的逆
+    static float invfy;     ///<x轴方向焦距的逆
+    cv::Mat mDistCoef; //去畸变参数
 
     // Stereo baseline multiplied by fx.
-    float mbf;
+    float mbf; //基线长度*fx
 
     // Stereo baseline in meters.
-    float mb;
+    float mb; //相机的基线长度,单位为米
 
     // Threshold close/far points. Close points are inserted from 1 view.
     // Far points are inserted as in the monocular case from 2 views.
-    float mThDepth;
+    float mThDepth; //判断远点和近点的深度阈值
     int N;// Number of KeyPoints.关键点的数量
 
     // Vector of keypoints (original for visualization) and undistorted (actually used by the system).
     // In the stereo case, mvKeysUn is redundant as images must be rectified.
     // In the RGB-D case, RGB images can be distorted.
-    std::vector<cv::KeyPoint> mvKeys, mvKeysRight;
-    std::vector<cv::KeyPoint> mvKeysUn;
+    std::vector<cv::KeyPoint> mvKeys;//原始左图像提取出的特征点（未校正）
+    std::vector<cv::KeyPoint> mvKeysRight;//原始右图像提取出的特征点（未校正）
+    std::vector<cv::KeyPoint> mvKeysUn;//校正mvKeys后的特征点
 
     // Corresponding stereo coordinate and depth for each keypoint.
     // "Monocular" keypoints have a negative value.
+    //m-member v-vector u-指代横坐标,因为最后这个坐标是通过各种拟合方法逼近出来的，所以使用float存储
     std::vector<float> mvuRight;
-    std::vector<float> mvDepth;
+    std::vector<float> mvDepth;//对应的深度
 
     // Bag of Words Vector structures.
     DBoW2::BowVector mBowVec;
     DBoW2::FeatureVector mFeatVec;
 
     // ORB descriptor, each row associated to a keypoint.
-    cv::Mat mDescriptors, mDescriptorsRight;
+    cv::Mat mDescriptors, mDescriptorsRight;// 左目摄像头和右目摄像头特征点对应的描述子
 
     // MapPoints associated to keypoints, NULL pointer if no association.
-    std::vector<MapPoint*> mvpMapPoints;
+    std::vector<MapPoint*> mvpMapPoints;// 每个特征点对应的MapPoint.如果特征点没有对应的地图点,那么将存储一个空指针
 
     // Flag to identify outlier associations.
-    std::vector<bool> mvbOutlier;
+    std::vector<bool> mvbOutlier;// 属于外点的特征点标记,在 Optimizer::PoseOptimization 使用了
 
     // Keypoints are assigned to cells in a grid to reduce matching complexity when projecting MapPoints.
+    //@note 注意到上面也是类的静态成员变量， 有一个专用的标志mbInitialComputations用来在帧的构造函数中标记这些静态成员变量是否需要被赋值
+    // 坐标乘以mfGridElementWidthInv和mfGridElementHeightInv就可以确定在哪个格子
     static float mfGridElementWidthInv;
+    // 坐标乘以mfGridElementWidthInv和mfGridElementHeightInv就可以确定在哪个格子
     static float mfGridElementHeightInv;
-    //网格数组, 数组的每个元素是vector,保存属于该网格的特征点的索引
+    // 每个格子分配的特征点数，将图像分成格子，保证提取的特征点比较均匀
+    // FRAME_GRID_ROWS 48
+    // FRAME_GRID_COLS 64
+    //这个向量中存储的是每个图像网格内特征点的id（左图）
     std::vector<std::size_t> mGrid[FRAME_GRID_COLS][FRAME_GRID_ROWS];
 
     // Camera pose.
-    cv::Mat mTcw;
+    cv::Mat mTcw;//< 相机姿态 世界坐标系到相机坐标坐标系的变换矩阵,是我们常规理解中的相机位姿
 
     // Current and Next Frame id.
     static long unsigned int nNextId;
     long unsigned int mnId;
 
     // Reference Keyframe.
-    KeyFrame* mpReferenceKF;
+    KeyFrame* mpReferenceKF;// 普通帧与自己共视程度最高的关键帧作为参考关键帧
 
     // Scale pyramid info.
-    int mnScaleLevels;
-    float mfScaleFactor;
-    float mfLogScaleFactor;
-    vector<float> mvScaleFactors;
-    vector<float> mvInvScaleFactors;
-    vector<float> mvLevelSigma2;
-    vector<float> mvInvLevelSigma2;
+    int mnScaleLevels;                  ///<图像金字塔的层数
+    float mfScaleFactor;                ///<图像金字塔的尺度因子
+    float mfLogScaleFactor;             ///<图像金字塔的尺度因子的对数值，用于仿照特征点尺度预测地图点的尺度
+
+    vector<float> mvScaleFactors;		///<图像金字塔每一层的缩放因子
+    vector<float> mvInvScaleFactors;	///<以及上面的这个变量的倒数
+    vector<float> mvLevelSigma2;		///
+    vector<float> mvInvLevelSigma2;		///<上面变量的倒数
 
     // Undistorted Image Bounds (computed once).
     static float mnMinX;
     static float mnMaxX;
     static float mnMinY;
     static float mnMaxY;
-
+    /**
+     * @brief 一个标志，标记是否已经进行了这些初始化计算
+     * @note 由于第一帧以及SLAM系统进行重新校正后的第一帧会有一些特殊的初始化处理操作，所以这里设置了这个变量. \n
+     * 如果这个标志被置位，说明再下一帧的帧构造函数中要进行这个“特殊的初始化操作”，如果没有被置位则不用。
+    */
     static bool mbInitialComputations;
-
 
 private:
 

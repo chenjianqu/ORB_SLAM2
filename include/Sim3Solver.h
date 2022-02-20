@@ -46,19 +46,19 @@ public:
 
     cv::Mat GetEstimatedRotation();
     cv::Mat GetEstimatedTranslation();
-    float GetEstimatedScale();
+    float GetEstimatedScale() const;
 
 
 protected:
 
-    void ComputeCentroid(cv::Mat &P, cv::Mat &Pr, cv::Mat &C);
+    static void ComputeCentroid(cv::Mat &P, cv::Mat &Pr, cv::Mat &C);
 
     void ComputeSim3(cv::Mat &P1, cv::Mat &P2);
 
     void CheckInliers();
 
-    void Project(const std::vector<cv::Mat> &vP3Dw, std::vector<cv::Mat> &vP2D, cv::Mat Tcw, cv::Mat K);
-    void FromCameraToImage(const std::vector<cv::Mat> &vP3Dc, std::vector<cv::Mat> &vP2D, cv::Mat K);
+    static void Project(const std::vector<cv::Mat> &vP3Dw, std::vector<cv::Mat> &vP2D, cv::Mat Tcw, cv::Mat K);
+    static void FromCameraToImage(const std::vector<cv::Mat> &vP3Dc, std::vector<cv::Mat> &vP2D, cv::Mat K);
 
 
 protected:
@@ -78,17 +78,17 @@ protected:
     std::vector<size_t> mvnMaxError1;
     std::vector<size_t> mvnMaxError2;
 
-    int N;
+    int N{};
     int mN1;
 
     // Current Estimation
     cv::Mat mR12i;
     cv::Mat mt12i;
-    float ms12i;
+    float ms12i{};
     cv::Mat mT12i;
     cv::Mat mT21i;
     std::vector<bool> mvbInliersi;
-    int mnInliersi;
+    int mnInliersi{};
 
     // Current Ransac State
     int mnIterations;
@@ -97,7 +97,7 @@ protected:
     cv::Mat mBestT12;
     cv::Mat mBestRotation;
     cv::Mat mBestTranslation;
-    float mBestScale;
+    float mBestScale{};
 
     // Scale is fixed to 1 in the stereo/RGBD case
     bool mbFixScale;
@@ -110,17 +110,17 @@ protected:
     std::vector<cv::Mat> mvP2im2;
 
     // RANSAC probability
-    double mRansacProb;
+    double mRansacProb{};
 
     // RANSAC min inliers
-    int mRansacMinInliers;
+    int mRansacMinInliers{};
 
     // RANSAC max iterations
-    int mRansacMaxIts;
+    int mRansacMaxIts{};
 
     // Threshold inlier/outlier. e = dist(Pi,T_ij*Pj)^2 < 5.991*mSigma2
-    float mTh;
-    float mSigma2;
+    float mTh{};
+    float mSigma2{};
 
     // Calibration
     cv::Mat mK1;

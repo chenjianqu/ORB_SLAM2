@@ -146,7 +146,7 @@ cv::Mat Sim3Solver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInli
     if(N<mRansacMinInliers)
     {
         bNoMore = true;
-        return cv::Mat();
+        return {};
     }
 
     vector<size_t> vAvailableIndices;
@@ -203,7 +203,7 @@ cv::Mat Sim3Solver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInli
     if(mnIterations>=mRansacMaxIts)
         bNoMore=true;
 
-    return cv::Mat();
+    return {};
 }
 
 cv::Mat Sim3Solver::find(vector<bool> &vbInliers12, int &nInliers)
@@ -374,7 +374,7 @@ cv::Mat Sim3Solver::GetEstimatedTranslation()
     return mBestTranslation.clone();
 }
 
-float Sim3Solver::GetEstimatedScale()
+float Sim3Solver::GetEstimatedScale() const
 {
     return mBestScale;
 }
@@ -391,9 +391,9 @@ void Sim3Solver::Project(const vector<cv::Mat> &vP3Dw, vector<cv::Mat> &vP2D, cv
     vP2D.clear();
     vP2D.reserve(vP3Dw.size());
 
-    for(size_t i=0, iend=vP3Dw.size(); i<iend; i++)
+    for(const auto & i : vP3Dw)
     {
-        cv::Mat P3Dc = Rcw*vP3Dw[i]+tcw;
+        cv::Mat P3Dc = Rcw*i+tcw;
         const float invz = 1/(P3Dc.at<float>(2));
         const float x = P3Dc.at<float>(0)*invz;
         const float y = P3Dc.at<float>(1)*invz;
@@ -412,11 +412,11 @@ void Sim3Solver::FromCameraToImage(const vector<cv::Mat> &vP3Dc, vector<cv::Mat>
     vP2D.clear();
     vP2D.reserve(vP3Dc.size());
 
-    for(size_t i=0, iend=vP3Dc.size(); i<iend; i++)
+    for(const auto & i : vP3Dc)
     {
-        const float invz = 1/(vP3Dc[i].at<float>(2));
-        const float x = vP3Dc[i].at<float>(0)*invz;
-        const float y = vP3Dc[i].at<float>(1)*invz;
+        const float invz = 1/(i.at<float>(2));
+        const float x = i.at<float>(0)*invz;
+        const float y = i.at<float>(1)*invz;
 
         vP2D.push_back((cv::Mat_<float>(2,1) << fx*x+cx, fy*y+cy));
     }

@@ -77,41 +77,39 @@ public:
 
 public:
 
-    // Tracking states
+    ///跟踪状态类型
     enum eTrackingState{
-        SYSTEM_NOT_READY=-1,
-        NO_IMAGES_YET=0,
-        NOT_INITIALIZED=1,
-        OK=2,
-        LOST=3
+        SYSTEM_NOT_READY=-1,        ///<系统没有准备好的状态,一般就是在启动后加载配置文件和词典文件时候的状态
+        NO_IMAGES_YET=0,            ///<当前无图像
+        NOT_INITIALIZED=1,          ///<有图像但是没有完成初始化
+        OK=2,                       ///<正常时候的工作状态
+        LOST=3                      ///<系统已经跟丢了的状态
     };
 
-    eTrackingState mState;
-    eTrackingState mLastProcessedState;
+    eTrackingState mState;//跟踪状态
+    eTrackingState mLastProcessedState;//上一帧的跟踪状态.这个变量在绘制当前帧的时候会被使用到
 
-    // Input sensor
+    //传感器类型
     int mSensor;
-
-    // Current Frame
-    Frame mCurrentFrame;
+    Frame mCurrentFrame;//追踪线程中有一个当前帧
     cv::Mat mImGray;
 
     // Initialization Variables (Monocular)
-    std::vector<int> mvIniLastMatches;
-    std::vector<int> mvIniMatches;
-    std::vector<cv::Point2f> mvbPrevMatched;
-    std::vector<cv::Point3f> mvIniP3D;
-    Frame mInitialFrame;
+    std::vector<int> mvIniLastMatches;//之前的匹配
+    std::vector<int> mvIniMatches;//初始化阶段中,当前帧中的特征点和参考帧中的特征点的匹配关系
+    std::vector<cv::Point2f> mvbPrevMatched;//在初始化的过程中,保存参考帧中的特征点
+    std::vector<cv::Point3f> mvIniP3D;//初始化过程中匹配后进行三角化得到的空间点
+    Frame mInitialFrame;//初始化过程中的参考帧
 
     // Lists used to recover the full camera trajectory at the end of the execution.
     // Basically we store the reference keyframe for each frame and its relative transformation
-    list<cv::Mat> mlRelativeFramePoses;
-    list<KeyFrame*> mlpReferences;
-    list<double> mlFrameTimes;
-    list<bool> mlbLost;
+    list<cv::Mat> mlRelativeFramePoses; //所有的参考关键帧的位姿;看上面注释的意思,这里存储的也是相对位姿
+    list<KeyFrame*> mlpReferences;//参考关键帧
+    list<double> mlFrameTimes;//所有帧的时间戳
+    list<bool> mlbLost;//是否跟丢的标志
 
     // True if local mapping is deactivated and we are performing only localization
-    bool mbOnlyTracking;
+    bool mbOnlyTracking;//标记当前系统是处于SLAM状态还是纯定位状态
 
     void Reset();
 
@@ -148,7 +146,7 @@ protected:
     // points in the map. Still tracking will continue if there are enough matches with temporal points.
     // In that case we are doing visual odometry. The system will try to do relocalization to recover
     // "zero-drift" localization to the map.
-    bool mbVO;
+    bool mbVO;//当进行纯定位时才会有的一个变量,为false表示该帧匹配了很多的地图点,跟踪是正常的;如果少于10个则为true,表示快要完蛋了
 
     //Other Thread Pointers
     LocalMapping* mpLocalMapper;
@@ -187,33 +185,33 @@ protected:
     float mbf;//基线长度
 
     //New KeyFrame rules (according to fps)
-    int mMinFrames;
-    int mMaxFrames;
+    int mMinFrames;// 新建关键帧和重定位中用来判断最小最大时间间隔，和帧率有关
+    int mMaxFrames;// 新建关键帧和重定位中用来判断最小最大时间间隔，和帧率有关
 
     // Threshold close/far points
     // Points seen as close by the stereo/RGBD sensor are considered reliable
     // and inserted from just one frame. Far points requiere a match in two keyframes.
-    float mThDepth;
+    float mThDepth;//用于区分远点和近点的阈值. 近点认为可信度比较高;远点则要求在两个关键帧中得到匹配
 
     // For RGB-D inputs only. For some datasets (e.g. TUM) the depthmap values are scaled.
-    float mDepthMapFactor;
+    float mDepthMapFactor;//深度缩放因子,链接深度值和具体深度值的参数.只对RGBD输入有效
 
     //Current matches in frame
-    int mnMatchesInliers;
+    int mnMatchesInliers;//当前帧中的进行匹配的内点,将会被不同的函数反复使用
 
     //Last Frame, KeyFrame and Relocalisation Info
-    KeyFrame* mpLastKeyFrame;
-    Frame mLastFrame;
-    unsigned int mnLastKeyFrameId;
-    unsigned int mnLastRelocFrameId;
+    KeyFrame* mpLastKeyFrame; // 上一关键帧
+    Frame mLastFrame;// 上一帧
+    unsigned int mnLastKeyFrameId;// 上一个关键帧的ID
+    unsigned int mnLastRelocFrameId;// 上一次重定位的那一帧的ID
 
     //Motion Model
     cv::Mat mVelocity;
 
     //Color order (true RGB, false BGR, ignored if grayscale)
-    bool mbRGB;
+    bool mbRGB;//RGB图像的颜色通道顺序
 
-    list<MapPoint*> mlpTemporalPoints;
+    list<MapPoint*> mlpTemporalPoints;//临时的地图点,用于提高双目和RGBD摄像头的帧间效果,用完之后就扔了
 };
 
 } //namespace ORB_SLAM

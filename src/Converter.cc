@@ -21,29 +21,37 @@
 
 #include "Converter.h"
 
-namespace ORB_SLAM2
-{
+namespace ORB_SLAM2{ \
 
+
+/**
+ * 将描述子转换为描述子向量，其实本质上是cv:Mat->std:vector
+ * @param Descriptors
+ * @return
+ */
 std::vector<cv::Mat> Converter::toDescriptorVector(const cv::Mat &Descriptors)
 {
     std::vector<cv::Mat> vDesc;
     vDesc.reserve(Descriptors.rows);
     for (int j=0;j<Descriptors.rows;j++)
         vDesc.push_back(Descriptors.row(j));
-
     return vDesc;
 }
 
+/**
+ * @brief 将以cv::Mat格式存储的位姿转换成为g2o::SE3Quat类型
+ *
+ * @param[in] 以cv::Mat格式存储的位姿
+ * @return g2o::SE3Quat 将以g2o::SE3Quat格式存储的位姿
+ */
 g2o::SE3Quat Converter::toSE3Quat(const cv::Mat &cvT)
 {
     Eigen::Matrix<double,3,3> R;
     R << cvT.at<float>(0,0), cvT.at<float>(0,1), cvT.at<float>(0,2),
          cvT.at<float>(1,0), cvT.at<float>(1,1), cvT.at<float>(1,2),
          cvT.at<float>(2,0), cvT.at<float>(2,1), cvT.at<float>(2,2);
-
-    Eigen::Matrix<double,3,1> t(cvT.at<float>(0,3), cvT.at<float>(1,3), cvT.at<float>(2,3));
-
-    return g2o::SE3Quat(R,t);
+    Eigen::Matrix<double,3,1> t( cvT.at<float>(0,3), cvT.at<float>(1,3), cvT.at<float>(2,3));
+    return {R,t};
 }
 
 cv::Mat Converter::toCvMat(const g2o::SE3Quat &SE3)
@@ -107,11 +115,17 @@ cv::Mat Converter::toCvSE3(const Eigen::Matrix<double,3,3> &R, const Eigen::Matr
     return cvMat.clone();
 }
 
+/**
+     * @brief 将cv::Mat类型数据转换成为3x1的Eigen矩阵
+     *
+     * @param[in] cvVector 待转换的数据
+     * @return Eigen::Matrix<double,3,1> 转换结果
+     * @note 需要确保输入的数据大小尺寸正确。
+     */
 Eigen::Matrix<double,3,1> Converter::toVector3d(const cv::Mat &cvVector)
 {
     Eigen::Matrix<double,3,1> v;
     v << cvVector.at<float>(0), cvVector.at<float>(1), cvVector.at<float>(2);
-
     return v;
 }
 

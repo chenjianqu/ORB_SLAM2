@@ -302,78 +302,97 @@ void Frame::UpdatePoseMatrices()
     mOw = -mRcw.t()*mtcw;
 }
 
+/**
+ * @brief 判断地图点是否在视野中
+ * 步骤
+ * Step 1 获得这个地图点的世界坐标，经过以下层层关卡的判断，通过的地图点才认为是在视野中
+ * Step 2 关卡一：将这个地图点变换到当前帧的相机坐标系下，如果深度值为正才能继续下一步。
+ * Step 3 关卡二：将地图点投影到当前帧的像素坐标，如果在图像有效范围内才能继续下一步。
+ * Step 4 关卡三：计算地图点到相机中心的距离，如果在有效距离范围内才能继续下一步。
+ * Step 5 关卡四：计算当前相机指向地图点向量和地图点的平均观测方向夹角，小于60°才能进入下一步。
+ * Step 6 根据地图点到光心的距离来预测一个尺度（仿照特征点金字塔层级）
+ * Step 7 记录计算得到的一些参数
+ * @param[in] pMP                       当前地图点
+ * @param[in] viewingCosLimit           当前相机指向地图点向量和地图点的平均观测方向夹角余弦阈值
+ * @return true                         地图点合格，且在视野内
+ * @return false                        地图点不合格，抛弃
+ */
 bool Frame::isInFrustum(MapPoint *pMP, float viewingCosLimit)
 {
+    // mbTrackInView是决定一个地图点是否进行重投影的标志
+    // 这个标志的确定要经过多个函数的确定，isInFrustum()只是其中的一个验证关卡。这里默认设置为否
     pMP->mbTrackInView = false;
-
-    // 3D in absolute coordinates
-    cv::Mat P = pMP->GetWorldPos(); 
-
-    // 3D in camera coordinates
+    /// Step 1 获得这个地图点的世界坐标
+    cv::Mat P = pMP->GetWorldPos();
+    // 根据当前帧(粗糙)位姿转化到当前相机坐标系下的三维点Pc
     const cv::Mat Pc = mRcw*P+mtcw;
-    const float &PcX = Pc.at<float>(0);
-    const float &PcY= Pc.at<float>(1);
-    const float &PcZ = Pc.at<float>(2);
-
-    // Check positive depth
+    const auto &PcX = Pc.at<float>(0);
+    const auto &PcY= Pc.at<float>(1);
+    const auto &PcZ = Pc.at<float>(2);
+    /// Step 2 关卡一：将这个地图点变换到当前帧的相机坐标系下，如果深度值为正才能继续下一步。
     if(PcZ<0.0f)
         return false;
-
-    // Project in image and check it is not outside
+    /// Step 3 关卡二：将地图点投影到当前帧的像素坐标，如果在图像有效范围内才能继续下一步。
     const float invz = 1.0f/PcZ;
     const float u=fx*PcX*invz+cx;
     const float v=fy*PcY*invz+cy;
-
     if(u<mnMinX || u>mnMaxX)
         return false;
     if(v<mnMinY || v>mnMaxY)
         return false;
 
-    // Check distance is in the scale invariance region of the MapPoint
+    /// Step 4 关卡三：计算地图点到相机中心的距离，如果在有效距离范围内才能继续下一步。
     const float maxDistance = pMP->GetMaxDistanceInvariance();
     const float minDistance = pMP->GetMinDistanceInvariance();
+    // 得到当前地图点距离当前帧相机光心的距离,注意P，mOw都是在同一坐标系下才可以
     const cv::Mat PO = P-mOw;
-    const float dist = cv::norm(PO);
-
-    if(dist<minDistance || dist>maxDistance)
+    const float dist = (float)cv::norm(PO);
+    if(dist<minDistance || dist>maxDistance)//如果不在有效范围内，认为投影不可靠
         return false;
 
-   // Check viewing angle
+    /// Step 5 关卡四：计算当前相机指向地图点向量和地图点的平均观测方向夹角，小于60°才能进入下一步。
     cv::Mat Pn = pMP->GetNormal();
-
-    const float viewCos = PO.dot(Pn)/dist;
-
-    if(viewCos<viewingCosLimit)
+    // 计算当前相机指向地图点向量和地图点的平均观测方向夹角的余弦值，注意平均观测方向为单位向量
+    const float viewCos = (float)PO.dot(Pn)/dist;
+    if(viewCos<viewingCosLimit)//夹角要在60°范围内，否则认为观测方向太偏了，重投影不可靠，返回false
         return false;
 
-    // Predict scale in the image
+    /// Step 6 根据地图点到光心的距离来预测一个尺度（仿照特征点金字塔层级）
     const int nPredictedLevel = pMP->PredictScale(dist,this);
 
+    /// Step 7 记录计算得到的一些参数
     // Data used by the tracking
-    pMP->mbTrackInView = true;
-    pMP->mTrackProjX = u;
-    pMP->mTrackProjXR = u - mbf*invz;
-    pMP->mTrackProjY = v;
-    pMP->mnTrackScaleLevel= nPredictedLevel;
-    pMP->mTrackViewCos = viewCos;
+    pMP->mbTrackInView = true;// 通过置位标记 MapPoint::mbTrackInView 来表示这个地图点要被投影
+    pMP->mTrackProjX = u;// 该地图点投影在当前图像（一般是左图）的像素横坐标
+    pMP->mTrackProjXR = u - mbf*invz;// bf/z其实是视差，相减得到右图（如有）中对应点的横坐标
+    pMP->mTrackProjY = v;// 该地图点投影在当前图像（一般是左图）的像素纵坐标
+    pMP->mnTrackScaleLevel= nPredictedLevel;// 根据地图点到光心距离，预测的该地图点的尺度层级
+    pMP->mTrackViewCos = viewCos;// 保存当前相机指向地图点向量和地图点的平均观测方向夹角的余弦值
 
-    return true;
+    return true;//执行到这里说明这个地图点在相机的视野中并且进行重投影是可靠的，返回true
 }
 
 /**
- * 获得以(x,y)为中心,半径为r的区域内的特征点
- * @param x
- * @param y
- * @param r 半径(曼哈顿距离)
- * @param minLevel 寻找特征的最底层
- * @param maxLevel 寻找特征的最顶层
- * @return
+ * @brief 找到在 以x,y为中心,半径为r的圆形内且金字塔层级在[minLevel, maxLevel]的特征点
+ *
+ * @param[in] x                     特征点坐标x
+ * @param[in] y                     特征点坐标y
+ * @param[in] r                     搜索半径
+ * @param[in] minLevel              最小金字塔层级
+ * @param[in] maxLevel              最大金字塔层级
+ * @return vector<size_t>           返回搜索到的候选匹配点id
  */
 vector<size_t> Frame::GetFeaturesInArea(const float &x, const float  &y, const float  &r, const int minLevel, const int maxLevel) const
 {
     vector<size_t> vIndices;
     vIndices.reserve(N);
-    ///给定的区域无效
+    /// Step 1 计算半径为r圆左右上下边界所在的网格列和行的id
+    // 查找半径为r的圆左侧边界所在网格列坐标。这个地方有点绕，慢慢理解下：
+    // (mnMaxX-mnMinX)/FRAME_GRID_COLS：表示列方向每个网格可以平均分得几个像素（肯定大于1）
+    // mfGridElementWidthInv=FRAME_GRID_COLS/(mnMaxX-mnMinX) 是上面倒数，表示每个像素可以均分几个网格列（肯定小于1）
+    // (x-mnMinX-r)，可以看做是从图像的左边界mnMinX到半径r的圆的左边界区域占的像素列数
+    // 两者相乘，就是求出那个半径为r的圆的左侧边界在哪个网格列中
+    // 保证nMinCellX 结果大于等于0
     const int nMinCellX = std::max(0,(int)std::floor((x-mnMinX-r)*mfGridElementWidthInv));
     if(nMinCellX>=FRAME_GRID_COLS)
         return vIndices;
@@ -388,16 +407,16 @@ vector<size_t> Frame::GetFeaturesInArea(const float &x, const float  &y, const f
         return vIndices;
 
     const bool bCheckLevels = (minLevel>0) || (maxLevel>=0);
-    ///遍历给定区域的网格
+    /// Step 2 遍历圆形区域内的所有网格，寻找满足条件的候选特征点，并将其index放到输出里
     for(int ix = nMinCellX; ix<=nMaxCellX; ix++){
         for(int iy = nMinCellY; iy<=nMaxCellY; iy++){
-            const vector<size_t> vCell = mGrid[ix][iy];
+            const vector<size_t> vCell = mGrid[ix][iy];// 获取这个网格内的所有特征点在 Frame::mvKeysUn 中的索引
             if(vCell.empty())
                 continue;
             ///遍历某个网格中的所有特征点
             for(unsigned long idx : vCell){
                 const cv::KeyPoint &kpUn = mvKeysUn[idx];
-                if(bCheckLevels){
+                if(bCheckLevels){ // 保证给定的搜索金字塔层级范围合法
                     if(kpUn.octave<minLevel)
                         continue;
                     if(maxLevel>=0 && kpUn.octave>maxLevel)
@@ -405,7 +424,7 @@ vector<size_t> Frame::GetFeaturesInArea(const float &x, const float  &y, const f
                 }
                 const float distx = kpUn.pt.x-x;
                 const float disty = kpUn.pt.y-y;
-                if(std::fabs(distx)<r && std::fabs(disty)<r) //判断是否满足条件
+                if(std::fabs(distx)<r && std::fabs(disty)<r) // 通过检查，计算候选特征点到圆中心的距离，查看是否是在这个圆形区域之内
                     vIndices.push_back(idx);
             }
         }
