@@ -1098,92 +1098,81 @@ int ORBmatcher::Fuse(KeyFrame *pKF, cv::Mat Scw, const vector<MapPoint *> &vpPoi
 
 
 /**
- * 筛选回环候选关键帧
- * 使用pKF1和pKF2的Sim3变换，增加pKF1和Pkf2间匹配的MapPoints，并存入vpMatches12中
- * @param pKF1
- * @param pKF2
- * @param vpMatches12
- * @param s12
- * @param R12
- * @param t12
- * @param th
- * @return
+ * @brief 通过Sim3变换，搜索两个关键帧中更多的匹配点对
+ * （之前使用SearchByBoW进行特征点匹配时会有漏匹配）
+ * @param[in] pKF1              当前帧
+ * @param[in] pKF2              闭环候选帧
+ * @param[in] vpMatches12       i表示匹配的pKF1 特征点索引，vpMatches12[i]表示匹配的地图点，null表示没有匹配
+ * @param[in] s12               pKF2 到 pKF1 的Sim 变换中的尺度
+ * @param[in] R12               pKF2 到 pKF1 的Sim 变换中的旋转矩阵
+ * @param[in] t12               pKF2 到 pKF1 的Sim 变换中的平移向量
+ * @param[in] th                搜索窗口的倍数
+ * @return int                  新增的匹配点对数目
  */
 int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &vpMatches12,
                              const float &s12, const cv::Mat &R12, const cv::Mat &t12, const float th)
 {
+    /// Step 1： 准备工作：内参，计算Sim3的逆
     const float &fx = pKF1->fx;
     const float &fy = pKF1->fy;
     const float &cx = pKF1->cx;
     const float &cy = pKF1->cy;
-
     // Camera 1 from world
     cv::Mat R1w = pKF1->GetRotation();
     cv::Mat t1w = pKF1->GetTranslation();
-
     //Camera 2 from world
     cv::Mat R2w = pKF2->GetRotation();
     cv::Mat t2w = pKF2->GetTranslation();
-
     //Transformation between cameras
+    // Sim3 的逆
     cv::Mat sR12 = s12*R12;
     cv::Mat sR21 = (1.0/s12)*R12.t();
     cv::Mat t21 = -sR21*t12;
-
+    // 取出关键帧中的地图点
     const vector<MapPoint*> vpMapPoints1 = pKF1->GetMapPointMatches();
     const int N1 = (int)vpMapPoints1.size();
-
     const vector<MapPoint*> vpMapPoints2 = pKF2->GetMapPointMatches();
     const int N2 =(int) vpMapPoints2.size();
-
+    // 记录pKF1，pKF2中已经匹配的特征点，已经匹配记为true，否则false
     vector<bool> vbAlreadyMatched1(N1,false);
     vector<bool> vbAlreadyMatched2(N2,false);
-
-    for(int i=0; i<N1; i++)
-    {
+    /// Step 2：记录已经匹配的特征点
+    for(int i=0; i<N1; i++){
         MapPoint* pMP = vpMatches12[i];
-        if(pMP)
-        {
-            vbAlreadyMatched1[i]=true;
+        if(pMP){
+            vbAlreadyMatched1[i]=true;// pKF1中第i个特征点已经匹配成功
             int idx2 = pMP->GetIndexInKeyFrame(pKF2);
             if(idx2>=0 && idx2<N2)
-                vbAlreadyMatched2[idx2]=true;
+                vbAlreadyMatched2[idx2]=true;// pKF2中第idx2个特征点在pKF1中有匹配
         }
     }
 
     vector<int> vnMatch1(N1,-1);
     vector<int> vnMatch2(N2,-1);
 
-    // Transform from KF1 to KF2 and search
-    for(int i1=0; i1<N1; i1++)
-    {
+    /// Step 3：通过Sim变换，寻找 pKF1 中特征点和 pKF2 中的新的匹配
+    // 之前使用SearchByBoW进行特征点匹配时会有漏匹配
+    for(int i1=0; i1<N1; i1++){
         MapPoint* pMP = vpMapPoints1[i1];
-
         if(!pMP || vbAlreadyMatched1[i1])
             continue;
-
         if(pMP->isBad())
             continue;
-
+        /// Step 3.1：通过Sim变换，将pKF1的地图点投影到pKF2中的图像坐标
         cv::Mat p3Dw = pMP->GetWorldPos();
-        cv::Mat p3Dc1 = R1w*p3Dw + t1w;
-        cv::Mat p3Dc2 = sR21*p3Dc1 + t21;
-
-        // Depth must be positive
-        if(p3Dc2.at<float>(2)<0.0)
+        cv::Mat p3Dc1 = R1w*p3Dw + t1w;// 把pKF1的地图点从world坐标系变换到camera1坐标系
+        cv::Mat p3Dc2 = sR21*p3Dc1 + t21;// 再通过Sim3将该地图点从camera1变换到camera2坐标系
+        if(p3Dc2.at<float>(2)<0.0)// 深度值为负，跳过
             continue;
-
+        // 投影到camera2图像坐标 (u,v)
         const float invz = 1.f/p3Dc2.at<float>(2);
         const float x = p3Dc2.at<float>(0)*invz;
         const float y = p3Dc2.at<float>(1)*invz;
-
         const float u = fx*x+cx;
         const float v = fy*y+cy;
-
-        // Point must be inside the image
-        if(!pKF2->IsInImage(u,v))
+        if(!pKF2->IsInImage(u,v))// 投影点必须在图像范围内，否则跳过
             continue;
-
+        /// Step 3.2：预测投影的点在图像金字塔哪一层
         const float maxDistance = pMP->GetMaxDistanceInvariance();
         const float minDistance = pMP->GetMinDistanceInvariance();
         const float dist3D = (float)cv::norm(p3Dc2);
@@ -1196,7 +1185,7 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
         const int nPredictedLevel = pMP->PredictScale(dist3D,pKF2);
 
         // Search in a radius
-        const float radius = th*pKF2->mvScaleFactors[nPredictedLevel];
+        const float radius = th*pKF2->mvScaleFactors[nPredictedLevel];// 计算特征点搜索半径
 
         const vector<size_t> vIndices = pKF2->GetFeaturesInArea(u,v,radius);
 

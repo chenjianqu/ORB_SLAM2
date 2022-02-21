@@ -43,7 +43,7 @@ class KeyFrameDatabase
 {
 public:
 
-    KeyFrameDatabase(const ORBVocabulary &voc);
+    explicit KeyFrameDatabase(const ORBVocabulary &voc);
 
    void add(KeyFrame* pKF);
 
@@ -60,9 +60,8 @@ public:
 protected:
 
   // Associated vocabulary
-  const ORBVocabulary* mpVoc;
-
-  // Inverted file
+  const ORBVocabulary* mpVoc;// 预先训练好的词典
+  // 倒排索引，mvInvertedFile[i]表示包含了第i个word id的所有关键帧
   std::vector<list<KeyFrame*> > mvInvertedFile;
 
   // Mutex

@@ -64,67 +64,67 @@ protected:
 protected:
 
     // KeyFrames and matches
-    KeyFrame* mpKF1;
-    KeyFrame* mpKF2;
+    KeyFrame* mpKF1;                            // 当前关键帧
+    KeyFrame* mpKF2;                            // 闭环关键帧
 
-    std::vector<cv::Mat> mvX3Dc1;
-    std::vector<cv::Mat> mvX3Dc2;
-    std::vector<MapPoint*> mvpMapPoints1;
-    std::vector<MapPoint*> mvpMapPoints2;
-    std::vector<MapPoint*> mvpMatches12;
-    std::vector<size_t> mvnIndices1;
-    std::vector<size_t> mvSigmaSquare1;
-    std::vector<size_t> mvSigmaSquare2;
-    std::vector<size_t> mvnMaxError1;
-    std::vector<size_t> mvnMaxError2;
+    std::vector<cv::Mat> mvX3Dc1;               // 存储匹配的,当前关键帧中的地图点在当前关键帧相机坐标系下的坐标
+    std::vector<cv::Mat> mvX3Dc2;               // 存储匹配的,闭环关键帧中的地图点在闭环关键帧相机坐标系下的坐标
+    std::vector<MapPoint*> mvpMapPoints1;       // 匹配的地图点的中,存储当前关键帧的地图点
+    std::vector<MapPoint*> mvpMapPoints2;       // 匹配的地图点的中,存储闭环关键帧的地图点
+    std::vector<MapPoint*> mvpMatches12;        // 下标是当前关键帧中特征点的id,内容是对应匹配的,闭环关键帧中的地图点
+    std::vector<size_t> mvnIndices1;            // 有效的匹配关系,在 vpMatched12 (构造函数) 中的索引
+    std::vector<size_t> mvSigmaSquare1;         // 这个变量好像是没有被用到
+    std::vector<size_t> mvSigmaSquare2;         // 这个变量好像是没有被用到
+    std::vector<size_t> mvnMaxError1;           // 当前关键帧中的某个特征点所允许的最大不确定度(和所在的金字塔图层有关)
+    std::vector<size_t> mvnMaxError2;           // 闭环关键帧中的某个特征点所允许的最大不确定度(同上)
 
-    int N{};
-    int mN1;
+    int N{};                                      // 下面的这个匹配关系去掉坏点和非法值之后,得到的可靠的匹配关系的点的数目
+    int mN1;                                    // 当前关键帧和闭环关键帧之间形成匹配关系的点的数目(Bow加速得到的匹配点)
 
     // Current Estimation
-    cv::Mat mR12i;
-    cv::Mat mt12i;
-    float ms12i{};
-    cv::Mat mT12i;
-    cv::Mat mT21i;
-    std::vector<bool> mvbInliersi;
-    int mnInliersi{};
+    cv::Mat mR12i;                              // 存储某次RANSAC过程中得到的旋转
+    cv::Mat mt12i;                              // 存储某次RANSAC过程中得到的平移
+    float ms12i{};                                // 存储某次RANSAC过程中得到的缩放系数
+    cv::Mat mT12i;                              // 存储某次RANSAC过程中得到的变换矩阵
+    cv::Mat mT21i;                              // 上面的逆
+    std::vector<bool> mvbInliersi;              // 内点标记,下标和N,mvpMapPoints1等一致,用于记录某次迭代过程中的内点情况
+    int mnInliersi{};                             // 在某次迭代的过程中经过投影误差进行的inlier检测得到的内点数目
 
     // Current Ransac State
-    int mnIterations;
-    std::vector<bool> mvbBestInliers;
-    int mnBestInliers;
-    cv::Mat mBestT12;
-    cv::Mat mBestRotation;
-    cv::Mat mBestTranslation;
-    float mBestScale{};
+    int mnIterations;                           // RANSAC迭代次数(当前正在进行的)
+    std::vector<bool> mvbBestInliers;           // 累计的,多次RANSAC中最好的最多的内点个数时的内点标记
+    int mnBestInliers;                          // 最好的一次迭代中,得到的内点个数
+    cv::Mat mBestT12;                           // 存储最好的一次迭代中得到的变换矩阵
+    cv::Mat mBestRotation;                      // 存储最好的一次迭代中得到的旋转
+    cv::Mat mBestTranslation;                   // 存储最好的一次迭代中得到的平移
+    float mBestScale{};                           // 存储最好的一次迭代中得到的缩放系数
 
     // Scale is fixed to 1 in the stereo/RGBD case
-    bool mbFixScale;
+    bool mbFixScale;                            // 当前传感器输入的情况下,是否需要计算尺度
 
     // Indices for random selection
-    std::vector<size_t> mvAllIndices;
+    std::vector<size_t> mvAllIndices;           // RANSAC中随机选择的时候,存储可以选择的点的id(去除那些存在问题的匹配点后重新排序)
 
     // Projections
-    std::vector<cv::Mat> mvP1im1;
-    std::vector<cv::Mat> mvP2im2;
+    std::vector<cv::Mat> mvP1im1;               // 当前关键帧中的地图点在当前关键帧图像上的投影坐标
+    std::vector<cv::Mat> mvP2im2;               // 闭环关键帧中的地图点在闭环关键帧图像上的投影坐标
 
     // RANSAC probability
-    double mRansacProb{};
+    double mRansacProb{};                         // 在计算RANSAC的理论迭代次数时使用到的概率,详细解释还是看函数 SetRansacParameters() 中的注释吧
 
     // RANSAC min inliers
-    int mRansacMinInliers{};
+    int mRansacMinInliers{};                      // RANSAC 结束的理想条件: 结束RANSAC过程所需要的最少内点数
 
     // RANSAC max iterations
-    int mRansacMaxIts{};
+    int mRansacMaxIts{};                          // RANSAC 结束的不理想条件: 最大迭代次数
 
     // Threshold inlier/outlier. e = dist(Pi,T_ij*Pj)^2 < 5.991*mSigma2
-    float mTh{};
-    float mSigma2{};
+    float mTh{};                                  // 没有使用到的变量
+    float mSigma2{};                              // 没有使用到的变量
 
     // Calibration
-    cv::Mat mK1;
-    cv::Mat mK2;
+    cv::Mat mK1;                                // 当前关键帧的内参矩阵
+    cv::Mat mK2;                                // 闭环关键帧的内参矩阵
 
 };
 

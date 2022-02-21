@@ -215,6 +215,10 @@ set<KeyFrame*> KeyFrame::GetConnectedKeyFrames()
     return s;
 }
 
+/**
+ * 得到与该关键帧连接的关键帧(已按权值排序)
+ * @return
+ */
 vector<KeyFrame*> KeyFrame::GetVectorCovisibleKeyFrames()
 {
     unique_lock<mutex> lock(mMutexConnections);
@@ -365,8 +369,7 @@ MapPoint* KeyFrame::GetMapPoint(const size_t &idx)
 void KeyFrame::UpdateConnections()
 {
     // 获得该关键帧的所有地图点
-    vector<MapPoint*> vpMP;
-    {
+    vector<MapPoint*> vpMP;{
         unique_lock<mutex> lockMPs(mMutexFeatures);
         vpMP = mvpMapPoints;
     }
@@ -506,18 +509,18 @@ void KeyFrame::SetNotErase()
     mbNotErase = true;
 }
 
+/**
+ * @brief 删除当前的这个关键帧,表示不进行回环检测过程;由回环检测线程调用
+ *
+ */
 void KeyFrame::SetErase()
 {
     {
         unique_lock<mutex> lock(mMutexConnections);
         if(mspLoopEdges.empty())
-        {
             mbNotErase = false;
-        }
     }
-
-    if(mbToBeErased)
-    {
+    if(mbToBeErased){
         SetBadFlag();
     }
 }
